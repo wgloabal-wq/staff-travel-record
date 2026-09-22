@@ -104,7 +104,7 @@ export default function LoginPage() {
               <img
                 src="/vertical-logo.png"
                 alt="World Global Manpower Pvt. Ltd."
-                className="h-auto w-[210px] object-contain"
+                className="h-auto w-[420px] object-contain"
               />
             </div>
 
