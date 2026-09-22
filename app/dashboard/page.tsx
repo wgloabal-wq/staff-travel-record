@@ -3,594 +3,494 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
-  Plane,
-  Users,
+  ArrowRight,
   CalendarDays,
+  CheckCircle2,
   Clock3,
   FileText,
-  BriefcaseBusiness,
-  ArrowRight,
-  MapPin,
-  UserRound,
-  Globe2,
-  TrendingUp,
+  Plane,
+  Plus,
+  RefreshCw,
+  UsersRound,
   AlertTriangle,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
 type TravelRecord = {
-  id: number;
+  id: string;
   staff_name: string;
   country: string;
-  going_date: string;
+  going_date: string | null;
   coming_date: string | null;
   visa_valid_till: string | null;
-  ticket_amount: number | null;
 };
 
+function formatDate(value: string | null) {
+  if (!value) return "—";
+
+  return new Date(`${value}T00:00:00`).toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+function getToday() {
+  const now = new Date();
+
+  return new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate()
+  );
+}
+
+function getTravelStatus(record: TravelRecord) {
+  const today = getToday();
+
+  const going = record.going_date
+    ? new Date(`${record.going_date}T00:00:00`)
+    : null;
+
+  const coming = record.coming_date
+    ? new Date(`${record.coming_date}T00:00:00`)
+    : null;
+
+  if (going && going > today) {
+    return "Upcoming";
+  }
+
+  if (going && going <= today && (!coming || coming >= today)) {
+    return "Currently Abroad";
+  }
+
+  if (coming && coming < today) {
+    return "Returned";
+  }
+
+  return "Pending";
+}
+
 export default function DashboardPage() {
-  const [records, setRecords] = useState<TravelRecord[]>([]);
+  const [travelRecords, setTravelRecords] = useState<TravelRecord[]>([]);
   const [candidateCount, setCandidateCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState("");
 
-  useEffect(() => {
-    loadDashboard();
-  }, []);
-
-  async function loadDashboard() {
+  async function loadDashboard(showRefresh = false) {
     try {
-      setLoading(true);
+      if (showRefresh) {
+        setRefreshing(true);
+      } else {
+        setLoading(true);
+      }
 
-      const [travelResult, candidateResult] = await Promise.all([
+      setError("");
+
+      const [travelResponse, candidateResponse] = await Promise.all([
         supabase
           .from("travel_records")
           .select(
-            "id, staff_name, country, going_date, coming_date, visa_valid_till, ticket_amount"
+            "id, staff_name, country, going_date, coming_date, visa_valid_till"
           )
-          .order("going_date", { ascending: true }),
-
+          .order("going_date", { ascending: false }),
         supabase
           .from("job_candidates")
           .select("id", { count: "exact", head: true }),
       ]);
 
-      if (!travelResult.error) {
-        setRecords(travelResult.data || []);
+      if (travelResponse.error) {
+        throw travelResponse.error;
       }
 
-      if (!candidateResult.error) {
-        setCandidateCount(candidateResult.count || 0);
+      if (candidateResponse.error) {
+        throw candidateResponse.error;
       }
+
+      setTravelRecords(travelResponse.data || []);
+      setCandidateCount(candidateResponse.count || 0);
+    } catch (err: any) {
+      console.error(err);
+      setError(err?.message || "Unable to load dashboard.");
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }
 
-  const today = useMemo(() => {
-    const d = new Date();
-    d.setHours(0, 0, 0, 0);
-    return d;
+  useEffect(() => {
+    void loadDashboard();
+    // Dashboard data should refresh when the dashboard is opened.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const in30Days = useMemo(() => {
-    const d = new Date(today);
-    d.setDate(d.getDate() + 30);
-    return d;
-  }, [today]);
+  const stats = useMemo(() => {
+    const today = getToday();
 
-  const currentlyAbroad = records.filter((record) => {
-    if (!record.going_date || !record.coming_date) return false;
+    let currentlyAbroad = 0;
+    let upcomingTrips = 0;
+    let visaExpiringSoon = 0;
 
-    const going = new Date(record.going_date);
-    const coming = new Date(record.coming_date);
+    const visaLimit = new Date(today);
+    visaLimit.setDate(visaLimit.getDate() + 30);
 
-    going.setHours(0, 0, 0, 0);
-    coming.setHours(0, 0, 0, 0);
+    for (const record of travelRecords) {
+      const status = getTravelStatus(record);
 
-    return going <= today && today <= coming;
-  }).length;
+      if (status === "Currently Abroad") {
+        currentlyAbroad += 1;
+      }
 
-  const upcomingTrips = records.filter((record) => {
-    if (!record.going_date) return false;
+      if (status === "Upcoming") {
+        upcomingTrips += 1;
+      }
 
-    const going = new Date(record.going_date);
-    going.setHours(0, 0, 0, 0);
+      if (record.visa_valid_till) {
+        const expiry = new Date(`${record.visa_valid_till}T00:00:00`);
 
-    return going > today;
-  }).length;
+        if (expiry >= today && expiry <= visaLimit) {
+          visaExpiringSoon += 1;
+        }
+      }
+    }
 
-  const visaExpiringSoon = records.filter((record) => {
-    if (!record.visa_valid_till) return false;
+    return {
+      totalTravel: travelRecords.length,
+      currentlyAbroad,
+      upcomingTrips,
+      visaExpiringSoon,
+    };
+  }, [travelRecords]);
 
-    const visa = new Date(record.visa_valid_till);
-    visa.setHours(0, 0, 0, 0);
+  const recentRecords = useMemo(
+    () => travelRecords.slice(0, 6),
+    [travelRecords]
+  );
 
-    return visa >= today && visa <= in30Days;
-  }).length;
+  const visaAlerts = useMemo(() => {
+    const today = getToday();
+    const limit = new Date(today);
+    limit.setDate(limit.getDate() + 30);
 
-  /*
-   * VISA ALERTS
-   * Shows expired visas and visas expiring within 30 days.
-   */
-  const visaAlerts = records
-    .filter((record) => {
-      if (!record.visa_valid_till) return false;
+    return travelRecords
+      .filter((record) => {
+        if (!record.visa_valid_till) return false;
 
-      const visa = new Date(record.visa_valid_till);
-      visa.setHours(0, 0, 0, 0);
+        const expiry = new Date(`${record.visa_valid_till}T00:00:00`);
 
-      return visa <= in30Days;
-    })
-    .sort((a, b) => {
-      if (!a.visa_valid_till) return 1;
-      if (!b.visa_valid_till) return -1;
-
-      return (
-        new Date(a.visa_valid_till).getTime() -
-        new Date(b.visa_valid_till).getTime()
-      );
-    })
-    .slice(0, 5);
-
-  const countries = new Set(
-    records.map((record) => record.country).filter(Boolean)
-  ).size;
-
-  const recentRecords = [...records]
-    .sort(
-      (a, b) =>
-        new Date(b.going_date).getTime() -
-        new Date(a.going_date).getTime()
-    )
-    .slice(0, 5);
-
-  function formatDate(date: string | null) {
-    if (!date) return "—";
-
-    return new Date(date).toLocaleDateString("en-GB", {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-    });
-  }
+        return expiry >= today && expiry <= limit;
+      })
+      .sort((a, b) => {
+        return (
+          new Date(`${a.visa_valid_till}T00:00:00`).getTime() -
+          new Date(`${b.visa_valid_till}T00:00:00`).getTime()
+        );
+      })
+      .slice(0, 5);
+  }, [travelRecords]);
 
   return (
-    <main className="min-h-screen bg-slate-50 text-slate-900">
-      {/* HEADER */}
-      <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6 sm:py-4">
-          <div className="flex items-start gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-white sm:h-11 sm:w-11">
-              <LayoutIcon />
-            </div>
-
+    <main className="min-h-screen bg-[#f5f7fb]">
+      {/* Page Header */}
+      <section className="border-b border-slate-200 bg-white">
+        <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+          <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h1 className="text-base font-bold sm:text-lg">
-                Dashboard
+              <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-indigo-600">
+                <span className="h-1.5 w-1.5 rounded-full bg-indigo-600" />
+                Management Dashboard
+              </div>
+
+              <h1 className="text-2xl font-bold tracking-tight text-slate-950 sm:text-3xl">
+                Welcome back
               </h1>
 
-              <p className="text-xs text-slate-500">
-                World Global Manpower Pvt. Ltd.
+              <p className="mt-1.5 max-w-2xl text-sm leading-6 text-slate-500">
+                Monitor staff travel and overseas recruitment activity from one
+                place.
               </p>
             </div>
-          </div>
 
-          <div className="hidden items-center gap-2 sm:flex">
-            <Link
-              href="/"
-              className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            <button
+              type="button"
+              onClick={() => void loadDashboard(true)}
+              disabled={refreshing}
+              className="inline-flex w-fit items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              <Plane size={17} />
-              Staff Travel Records
-            </Link>
-
-            <Link
-              href="/candidates"
-              className="flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800"
-            >
-              <BriefcaseBusiness size={17} />
-              Job Candidates
-            </Link>
+              <RefreshCw
+                size={16}
+                className={refreshing ? "animate-spin" : ""}
+              />
+              Refresh
+            </button>
           </div>
         </div>
-      </header>
+      </section>
 
-      {/* CONTENT */}
-      <div className="mx-auto max-w-7xl px-4 py-5 sm:px-6 sm:py-7">
-        <div className="mb-6 sm:mb-7">
-          <h2 className="text-xl font-bold tracking-tight sm:text-2xl">
-            Management Overview
-          </h2>
-
-          <p className="mt-1 text-xs leading-5 text-slate-500 sm:text-sm">
-            Quick overview of staff travel and recruitment operations.
-          </p>
-        </div>
-
-        {/* STATS */}
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <DashboardCard
-            title="Staff Travel Records"
-            value={loading ? "—" : String(records.length)}
-            icon={<Users size={21} />}
-          />
-
-          <DashboardCard
-            title="Currently Abroad"
-            value={loading ? "—" : String(currentlyAbroad)}
-            icon={<MapPin size={21} />}
-          />
-
-          <DashboardCard
-            title="Upcoming Trips"
-            value={loading ? "—" : String(upcomingTrips)}
-            icon={<CalendarDays size={21} />}
-          />
-
-          <DashboardCard
-            title="Job Candidates"
-            value={loading ? "—" : String(candidateCount)}
-            icon={<UserRound size={21} />}
-          />
-        </div>
-
-        {/* SECONDARY STATS */}
-        <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <SmallCard
-            title="Visa Expiring Soon"
-            value={loading ? "—" : String(visaExpiringSoon)}
-            subtitle="Within the next 30 days"
-            icon={<Clock3 size={19} />}
-          />
-
-          <SmallCard
-            title="Countries Covered"
-            value={loading ? "—" : String(countries)}
-            subtitle="Countries in staff records"
-            icon={<Globe2 size={19} />}
-          />
-
-          <SmallCard
-            title="System Status"
-            value="Active"
-            subtitle="Records management system"
-            icon={<TrendingUp size={19} />}
-          />
-        </div>
-
-        {/* VISA ALERTS */}
-        <section className="mt-6 sm:mt-8">
-          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="mx-auto max-w-7xl space-y-6 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+        {error && (
+          <div className="flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3.5 text-sm text-red-700">
+            <AlertTriangle size={18} className="mt-0.5 shrink-0" />
             <div>
-              <h3 className="text-lg font-bold">
-                Visa Expiry Alerts
-              </h3>
-
-              <p className="mt-1 text-xs leading-5 text-slate-500 sm:text-sm">
-                Staff visas requiring attention.
-              </p>
-            </div>
-
-            <div className="flex w-fit items-center gap-2 rounded-lg bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
-              <AlertTriangle size={15} />
-              {loading ? "—" : visaExpiringSoon} Expiring Soon
+              <p className="font-semibold">Dashboard data could not be loaded</p>
+              <p className="mt-0.5 text-red-600">{error}</p>
             </div>
           </div>
+        )}
 
+        {/* Stats */}
+        <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <StatCard
+            label="Staff Travel Records"
+            value={loading ? "—" : stats.totalTravel}
+            icon={<Plane size={20} />}
+            tone="indigo"
+          />
+
+          <StatCard
+            label="Currently Abroad"
+            value={loading ? "—" : stats.currentlyAbroad}
+            icon={<CheckCircle2 size={20} />}
+            tone="emerald"
+          />
+
+          <StatCard
+            label="Upcoming Trips"
+            value={loading ? "—" : stats.upcomingTrips}
+            icon={<CalendarDays size={20} />}
+            tone="amber"
+          />
+
+          <StatCard
+            label="Job Candidates"
+            value={loading ? "—" : candidateCount}
+            icon={<UsersRound size={20} />}
+            tone="violet"
+          />
+        </section>
+
+        {/* Quick Actions */}
+        <section className="grid gap-4 md:grid-cols-2">
+          <QuickAction
+            href="/staff/add"
+            icon={<Plus size={21} />}
+            title="Add Staff Travel Record"
+            description="Create a new staff travel entry with visa and travel details."
+          />
+
+          <QuickAction
+            href="/candidates/add"
+            icon={<UsersRound size={21} />}
+            title="Add Job Candidate"
+            description="Register a candidate and start tracking their recruitment process."
+          />
+        </section>
+
+        <section className="grid gap-6 xl:grid-cols-[1.65fr_1fr]">
+          {/* Recent Travel */}
           <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-            {loading ? (
-              <div className="py-8 text-center text-sm text-slate-500">
-                Loading visa alerts...
+            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 sm:px-6">
+              <div>
+                <h2 className="text-base font-bold text-slate-900">
+                  Recent Staff Travel
+                </h2>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  Latest travel records
+                </p>
               </div>
-            ) : visaAlerts.length === 0 ? (
-              <div className="flex flex-col items-center justify-center px-5 py-10 text-center">
-                <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
-                  ✓
+
+              <Link
+                href="/staff"
+                className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-600 hover:text-indigo-700"
+              >
+                View all
+                <ArrowRight size={14} />
+              </Link>
+            </div>
+
+            {loading ? (
+              <LoadingRows />
+            ) : recentRecords.length === 0 ? (
+              <EmptyState
+                icon={<Plane size={22} />}
+                title="No travel records yet"
+                description="Start by adding your first staff travel record."
+                href="/staff/add"
+                action="Add travel record"
+              />
+            ) : (
+              <>
+                <div className="hidden overflow-x-auto md:block">
+                  <table className="w-full text-left">
+                    <thead>
+                      <tr className="border-b border-slate-100 bg-slate-50/70 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                        <th className="px-6 py-3">Staff</th>
+                        <th className="px-4 py-3">Country</th>
+                        <th className="px-4 py-3">Going</th>
+                        <th className="px-4 py-3">Return</th>
+                        <th className="px-6 py-3">Status</th>
+                      </tr>
+                    </thead>
+
+                    <tbody className="divide-y divide-slate-100">
+                      {recentRecords.map((record) => (
+                        <TravelRow key={record.id} record={record} />
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
 
-                <h4 className="font-semibold">
-                  No visa alerts
-                </h4>
+                <div className="divide-y divide-slate-100 md:hidden">
+                  {recentRecords.map((record) => (
+                    <MobileTravelCard key={record.id} record={record} />
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
 
-                <p className="mt-1 text-xs text-slate-500 sm:text-sm">
-                  No staff visas are expiring within the next 30 days.
+          {/* Visa Monitoring */}
+          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="border-b border-slate-200 px-5 py-4 sm:px-6">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-base font-bold text-slate-900">
+                    Visa Monitoring
+                  </h2>
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    Expiring within 30 days
+                  </p>
+                </div>
+
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-50 text-amber-600">
+                  <Clock3 size={18} />
+                </div>
+              </div>
+            </div>
+
+            {visaAlerts.length === 0 ? (
+              <div className="flex min-h-[220px] flex-col items-center justify-center px-6 text-center">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
+                  <CheckCircle2 size={22} />
+                </div>
+
+                <p className="mt-3 text-sm font-semibold text-slate-800">
+                  No upcoming visa expiries
+                </p>
+
+                <p className="mt-1 max-w-xs text-xs leading-5 text-slate-500">
+                  There are no recorded visas expiring in the next 30 days.
                 </p>
               </div>
             ) : (
               <div className="divide-y divide-slate-100">
-                {visaAlerts.map((record) => {
-                  const visaDate = record.visa_valid_till
-                    ? new Date(record.visa_valid_till)
-                    : null;
-
-                  const daysLeft = visaDate
-                    ? Math.ceil(
-                        (visaDate.getTime() - today.getTime()) /
-                          (1000 * 60 * 60 * 24)
-                      )
-                    : null;
-
-                  const isExpired =
-                    daysLeft !== null && daysLeft < 0;
-
-                  const isCritical =
-                    daysLeft !== null && daysLeft <= 15;
-
-                  return (
-                    <div
-                      key={record.id}
-                      className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div
-                          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${
-                            isExpired || isCritical
-                              ? "bg-red-50 text-red-600"
-                              : "bg-amber-50 text-amber-600"
-                          }`}
-                        >
-                          <AlertTriangle size={18} />
-                        </div>
-
-                        <div>
-                          <p className="text-sm font-semibold text-slate-900">
-                            {record.staff_name}
-                          </p>
-
-                          <p className="mt-0.5 text-xs text-slate-500">
-                            {record.country} • Visa till{" "}
-                            {formatDate(record.visa_valid_till)}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-3">
-                        <span
-                          className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                            isExpired
-                              ? "bg-red-100 text-red-700"
-                              : isCritical
-                                ? "bg-orange-100 text-orange-700"
-                                : "bg-amber-100 text-amber-700"
-                          }`}
-                        >
-                          {isExpired
-                            ? "Expired"
-                            : daysLeft === 0
-                              ? "Expires Today"
-                              : `${daysLeft} days left`}
-                        </span>
-                      </div>
+                {visaAlerts.map((record) => (
+                  <div
+                    key={record.id}
+                    className="flex items-center gap-3 px-5 py-4 sm:px-6"
+                  >
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-600">
+                      <FileText size={17} />
                     </div>
-                  );
-                })}
+
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold text-slate-800">
+                        {record.staff_name}
+                      </p>
+
+                      <p className="mt-0.5 text-xs text-slate-500">
+                        {record.country}
+                      </p>
+                    </div>
+
+                    <div className="text-right">
+                      <p className="text-xs font-semibold text-amber-600">
+                        {formatDate(record.visa_valid_till)}
+                      </p>
+
+                      <p className="mt-0.5 text-[10px] text-slate-400">
+                        Visa expiry
+                      </p>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </div>
         </section>
 
-        {/* QUICK ACTIONS */}
-        <section className="mt-6 sm:mt-8">
-          <div className="mb-4">
-            <h3 className="text-lg font-bold">
-              Quick Access
-            </h3>
-
-            <p className="mt-1 text-xs leading-5 text-slate-500 sm:text-sm">
-              Open the section you want to manage.
-            </p>
-          </div>
-
-          <div className="grid gap-4 md:grid-cols-2">
-            <QuickAction
-              href="/"
-              icon={<Plane size={22} />}
-              title="Staff Travel Records"
-              description="View staff travel, visa, ticket and document records."
-            />
-
-            <QuickAction
-              href="/candidates"
-              icon={<BriefcaseBusiness size={22} />}
-              title="Job Candidates"
-              description="Manage recruitment candidates and deployment records."
-            />
-          </div>
-        </section>
-
-        {/* RECENT TRAVEL */}
-        <section className="mt-8 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <div className="flex flex-col gap-3 border-b border-slate-200 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+        {/* Bottom Information */}
+        <section className="rounded-2xl bg-[#0b1220] p-5 text-white shadow-lg sm:p-6">
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <h3 className="font-semibold">
-                Recent Staff Travel
-              </h3>
+              <div className="flex items-center gap-2">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-600">
+                  <UsersRound size={18} />
+                </div>
 
-              <p className="mt-0.5 text-xs text-slate-500">
-                Latest travel records
+                <p className="text-sm font-bold">
+                  World Global Manpower Pvt. Ltd.
+                </p>
+              </div>
+
+              <p className="mt-2 max-w-2xl text-xs leading-5 text-slate-400">
+                Centralized management for staff travel records and overseas
+                recruitment candidates.
               </p>
             </div>
 
-            <Link
-              href="/"
-              className="flex items-center gap-1 self-start text-sm font-semibold text-slate-700 hover:text-slate-900 sm:self-auto"
-            >
-              View all
-              <ArrowRight size={15} />
-            </Link>
+            <div className="flex flex-wrap gap-2 text-[11px] font-medium text-slate-400">
+              <span className="rounded-full border border-white/10 px-3 py-1.5">
+                Staff Management
+              </span>
+              <span className="rounded-full border border-white/10 px-3 py-1.5">
+                Recruitment
+              </span>
+              <span className="rounded-full border border-white/10 px-3 py-1.5">
+                Travel Tracking
+              </span>
+            </div>
           </div>
-
-          {loading ? (
-            <div className="py-12 text-center text-sm text-slate-500">
-              Loading dashboard...
-            </div>
-          ) : recentRecords.length === 0 ? (
-            <div className="flex flex-col items-center justify-center px-5 py-12 text-center">
-              <FileText
-                size={36}
-                className="mb-3 text-slate-300"
-              />
-
-              <h4 className="font-semibold">
-                No travel records yet
-              </h4>
-
-              <p className="mt-1 text-xs leading-5 text-slate-500 sm:text-sm">
-                Staff travel records will appear here.
-              </p>
-
-              <Link
-                href="/add"
-                className="mt-4 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
-              >
-                Add Travel Record
-              </Link>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[700px] text-left">
-                <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-                  <tr>
-                    <th className="px-3 py-3 font-semibold sm:px-5">
-                      Staff
-                    </th>
-
-                    <th className="px-3 py-3 font-semibold sm:px-5">
-                      Country
-                    </th>
-
-                    <th className="px-3 py-3 font-semibold sm:px-5">
-                      Going
-                    </th>
-
-                    <th className="px-3 py-3 font-semibold sm:px-5">
-                      Coming
-                    </th>
-
-                    <th className="px-3 py-3 font-semibold sm:px-5">
-                      Visa Till
-                    </th>
-                  </tr>
-                </thead>
-
-                <tbody className="divide-y divide-slate-100">
-                  {recentRecords.map((record) => (
-                    <tr
-                      key={record.id}
-                      className="hover:bg-slate-50"
-                    >
-                      <td className="px-3 py-4 text-sm font-semibold sm:px-5">
-                        {record.staff_name}
-                      </td>
-
-                      <td className="px-3 py-4 text-sm sm:px-5">
-                        <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium">
-                          {record.country}
-                        </span>
-                      </td>
-
-                      <td className="px-3 py-4 text-sm sm:px-5">
-                        {formatDate(record.going_date)}
-                      </td>
-
-                      <td className="px-3 py-4 text-sm sm:px-5">
-                        {formatDate(record.coming_date)}
-                      </td>
-
-                      <td className="px-3 py-4 text-sm sm:px-5">
-                        {formatDate(record.visa_valid_till)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
         </section>
-
-        {/* COMPANY STRIP */}
-        <div className="mt-6 flex flex-col gap-3 rounded-xl border border-slate-200 bg-white px-5 py-4 text-xs text-slate-500 shadow-sm sm:flex-row sm:items-center sm:justify-between">
-          <p className="break-words">
-            <span className="font-semibold text-slate-700">
-              World Global Manpower Pvt. Ltd.
-            </span>{" "}
-            • Rohini Sector 7, New Delhi, India
-          </p>
-
-          <p className="break-words sm:text-right">
-            hello@wgmanpower.com • wgmanpower.com
-          </p>
-        </div>
       </div>
     </main>
   );
 }
 
-function LayoutIcon() {
-  return <BriefcaseBusiness size={22} />;
-}
-
-function DashboardCard({
-  title,
+function StatCard({
+  label,
   value,
   icon,
+  tone,
 }: {
-  title: string;
-  value: string;
+  label: string;
+  value: string | number;
   icon: React.ReactNode;
+  tone: "indigo" | "emerald" | "amber" | "violet";
 }) {
-  return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-      <div className="flex items-start justify-between">
-        <div>
-          <p className="text-sm text-slate-500">
-            {title}
-          </p>
+  const styles = {
+    indigo: "bg-indigo-50 text-indigo-600",
+    emerald: "bg-emerald-50 text-emerald-600",
+    amber: "bg-amber-50 text-amber-600",
+    violet: "bg-violet-50 text-violet-600",
+  };
 
-          <p className="mt-2 text-3xl font-bold tracking-tight">
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-xs font-medium text-slate-500">{label}</p>
+          <p className="mt-2 text-2xl font-bold tracking-tight text-slate-950">
             {value}
           </p>
         </div>
 
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-700">
+        <div
+          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${styles[tone]}`}
+        >
           {icon}
         </div>
-      </div>
-    </div>
-  );
-}
-
-function SmallCard({
-  title,
-  value,
-  subtitle,
-  icon,
-}: {
-  title: string;
-  value: string;
-  subtitle: string;
-  icon: React.ReactNode;
-}) {
-  return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-      <div className="flex items-start gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-700">
-          {icon}
-        </div>
-
-        <div>
-          <p className="text-sm font-semibold text-slate-800">
-            {title}
-          </p>
-
-          <p className="mt-1 text-xs text-slate-500">
-            {subtitle}
-          </p>
-        </div>
-
-        <p className="shrink-0 text-xl font-bold sm:text-2xl">
-          {value}
-        </p>
       </div>
     </div>
   );
@@ -610,26 +510,164 @@ function QuickAction({
   return (
     <Link
       href={href}
-      className="group flex items-start gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md sm:items-center sm:gap-4 sm:p-5"
+      className="group rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-indigo-200 hover:shadow-md sm:p-6"
     >
-      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-white sm:h-12 sm:w-12">
+      <div className="flex items-center gap-4">
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 transition group-hover:bg-indigo-600 group-hover:text-white">
+          {icon}
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <h3 className="text-sm font-bold text-slate-900">{title}</h3>
+          <p className="mt-1 text-xs leading-5 text-slate-500">
+            {description}
+          </p>
+        </div>
+
+        <ArrowRight
+          size={18}
+          className="shrink-0 text-slate-300 transition group-hover:translate-x-1 group-hover:text-indigo-600"
+        />
+      </div>
+    </Link>
+  );
+}
+
+function TravelRow({ record }: { record: TravelRecord }) {
+  const status = getTravelStatus(record);
+
+  return (
+    <tr className="transition hover:bg-slate-50/70">
+      <td className="px-6 py-4">
+        <p className="max-w-[180px] truncate text-sm font-semibold text-slate-800">
+          {record.staff_name}
+        </p>
+      </td>
+
+      <td className="px-4 py-4 text-sm text-slate-600">
+        {record.country || "—"}
+      </td>
+
+      <td className="px-4 py-4 text-xs text-slate-500">
+        {formatDate(record.going_date)}
+      </td>
+
+      <td className="px-4 py-4 text-xs text-slate-500">
+        {formatDate(record.coming_date)}
+      </td>
+
+      <td className="px-6 py-4">
+        <StatusBadge status={status} />
+      </td>
+    </tr>
+  );
+}
+
+function MobileTravelCard({ record }: { record: TravelRecord }) {
+  const status = getTravelStatus(record);
+
+  return (
+    <div className="px-5 py-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-bold text-slate-800">
+            {record.staff_name}
+          </p>
+          <p className="mt-0.5 text-xs text-slate-500">
+            {record.country || "Country not specified"}
+          </p>
+        </div>
+
+        <StatusBadge status={status} />
+      </div>
+
+      <div className="mt-3 grid grid-cols-2 gap-3 rounded-xl bg-slate-50 p-3">
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+            Going
+          </p>
+          <p className="mt-1 text-xs font-medium text-slate-700">
+            {formatDate(record.going_date)}
+          </p>
+        </div>
+
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+            Return
+          </p>
+          <p className="mt-1 text-xs font-medium text-slate-700">
+            {formatDate(record.coming_date)}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StatusBadge({ status }: { status: string }) {
+  const styles: Record<string, string> = {
+    Upcoming: "bg-indigo-50 text-indigo-700",
+    "Currently Abroad": "bg-emerald-50 text-emerald-700",
+    Returned: "bg-slate-100 text-slate-600",
+    Pending: "bg-amber-50 text-amber-700",
+  };
+
+  return (
+    <span
+      className={`inline-flex whitespace-nowrap rounded-full px-2.5 py-1 text-[10px] font-semibold ${
+        styles[status] || "bg-slate-100 text-slate-600"
+      }`}
+    >
+      {status}
+    </span>
+  );
+}
+
+function LoadingRows() {
+  return (
+    <div className="space-y-3 p-5 sm:p-6">
+      {[1, 2, 3, 4].map((item) => (
+        <div
+          key={item}
+          className="h-12 animate-pulse rounded-xl bg-slate-100"
+        />
+      ))}
+    </div>
+  );
+}
+
+function EmptyState({
+  icon,
+  title,
+  description,
+  href,
+  action,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  description: string;
+  href: string;
+  action: string;
+}) {
+  return (
+    <div className="flex min-h-[260px] flex-col items-center justify-center px-6 text-center">
+      <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600">
         {icon}
       </div>
 
-      <div className="min-w-0">
-        <h4 className="font-semibold">
-          {title}
-        </h4>
+      <p className="mt-3 text-sm font-semibold text-slate-800">{title}</p>
 
-        <p className="mt-1 text-xs leading-5 text-slate-500 sm:text-sm">
-          {description}
-        </p>
-      </div>
+      <p className="mt-1 max-w-sm text-xs leading-5 text-slate-500">
+        {description}
+      </p>
 
-      <ArrowRight
-        size={18}
-        className="ml-auto shrink-0 text-slate-400 transition group-hover:translate-x-1 group-hover:text-slate-700"
-      />
-    </Link>
+      <Link
+        href={href}
+        className="mt-4 inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-xs font-semibold text-white shadow-sm transition hover:bg-indigo-700"
+      >
+        <Plus size={15} />
+        {action}
+      </Link>
+    </div>
   );
 }

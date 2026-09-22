@@ -1,28 +1,25 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { ChangeEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  ArrowLeft,
-  Plus,
-  Search,
-  Users,
   BriefcaseBusiness,
-  Plane,
+  CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   FileText,
-  MoreVertical,
-  Eye,
-  Pencil,
-  Printer,
-  Trash2,
-  X,
   Loader2,
-  Phone,
-  RefreshCw,
-  Building2,
-  MapPin,
   Mail,
-  Globe,
+  Pencil,
+  Plane,
+  Plus,
+  Printer,
+  RefreshCw,
+  Search,
+  Trash2,
+  UserRound,
+  Wallet,
+  X,
 } from "lucide-react";
 import jsPDF from "jspdf";
 import { supabase } from "@/lib/supabase";
@@ -37,6 +34,7 @@ type Candidate = {
   address: string | null;
   city: string | null;
   state: string | null;
+  date_of_birth: string | null;
 
   passport_number: string | null;
   passport_expiry: string | null;
@@ -70,6 +68,9 @@ type Candidate = {
   payment_currency: string | null;
   last_payment_date: string | null;
   payment_method: string | null;
+  exchange_rate_to_inr: number | null;
+  service_fee_inr: number | null;
+  total_amount_inr: number | null;
 
   passport_file: string | null;
   photo_file: string | null;
@@ -103,6 +104,25 @@ const statuses = [
   "Rejected",
 ];
 
+const documentFields: Array<{
+  key: keyof Candidate;
+  label: string;
+}> = [
+  { key: "passport_file", label: "Passport" },
+  { key: "photo_file", label: "Photo" },
+  { key: "cv_file", label: "CV / Resume" },
+  { key: "offer_letter_file", label: "Offer Letter" },
+  { key: "contract_file", label: "Employment Contract" },
+  { key: "invitation_file", label: "Invitation Letter" },
+  { key: "visa_file", label: "Visa" },
+  { key: "ticket_file", label: "Flight Ticket" },
+  { key: "medical_file", label: "Medical" },
+  { key: "insurance_file", label: "Insurance" },
+  { key: "other_file", label: "Other Document" },
+];
+
+const MAX_FILE_SIZE = 20 * 1024 * 1024;
+
 export default function CandidatesPage() {
   const router = useRouter();
 
@@ -113,63 +133,53 @@ export default function CandidatesPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All Status");
   const [countryFilter, setCountryFilter] = useState("All Countries");
+  const [openId, setOpenId] = useState<number | null>(null);
 
-  const [selectedCandidate, setSelectedCandidate] =
+  const [editCandidate, setEditCandidate] = useState<Candidate | null>(null);
+  const [editRateLoading, setEditRateLoading] = useState(false);
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState("");
+  const [editDocumentFile, setEditDocumentFile] = useState<File | null>(null);
+
+  const [documentsCandidate, setDocumentsCandidate] =
     useState<Candidate | null>(null);
 
-  const [popup, setPopup] = useState<
-    "actions" | "details" | "documents" | null
-  >(null);
-
-  const [deleting, setDeleting] = useState(false);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
 
   useEffect(() => {
-    fetchCandidates();
+    void fetchCandidates();
   }, []);
 
   async function fetchCandidates() {
-    try {
-      setLoading(true);
-      setErrorMessage("");
+    setLoading(true);
+    setErrorMessage("");
 
-      const result = await supabase
-        .from("job_candidates")
-        .select("*")
-        .order("created_at", { ascending: false });
+    const { data, error } = await supabase
+      .from("job_candidates")
+      .select("*")
+      .order("created_at", { ascending: false });
 
-      if (result.error) {
-        setCandidates([]);
-        setErrorMessage(
-          result.error.message ||
-            "Unable to load job candidates."
-        );
-        return;
-      }
-
-      setCandidates((result.data || []) as Candidate[]);
-    } catch (err) {
-      const message =
-        err instanceof Error
-          ? err.message
-          : "Unable to load job candidates.";
-
+    if (error) {
       setCandidates([]);
-      setErrorMessage(message);
-    } finally {
-      setLoading(false);
+      setErrorMessage(error.message || "Unable to load candidates.");
+    } else {
+      setCandidates((data || []) as Candidate[]);
     }
+
+    setLoading(false);
   }
 
-  const countries = useMemo(() => {
-    const list = candidates
-      .map((candidate) => candidate.country)
-      .filter(
-        (country): country is string =>
-          Boolean(country)
-      );
-
-    return Array.from(new Set(list)).sort();
-  }, [candidates]);
+  const countries = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          candidates
+            .map((candidate) => candidate.country)
+            .filter(Boolean) as string[]
+        )
+      ).sort(),
+    [candidates]
+  );
 
   const filteredCandidates = useMemo(() => {
     const text = search.toLowerCase().trim();
@@ -177,191 +187,394 @@ export default function CandidatesPage() {
     return candidates.filter((candidate) => {
       const matchesSearch =
         !text ||
-        candidate.full_name
-          ?.toLowerCase()
-          .includes(text) ||
-        candidate.mobile
-          ?.toLowerCase()
-          .includes(text) ||
-        candidate.job_position
-          ?.toLowerCase()
-          .includes(text) ||
-        candidate.employer_name
-          ?.toLowerCase()
-          .includes(text) ||
-        candidate.passport_number
-          ?.toLowerCase()
-          .includes(text);
+        candidate.full_name?.toLowerCase().includes(text) ||
+        candidate.mobile?.toLowerCase().includes(text) ||
+        candidate.job_position?.toLowerCase().includes(text) ||
+        candidate.employer_name?.toLowerCase().includes(text) ||
+        candidate.passport_number?.toLowerCase().includes(text);
 
       const matchesStatus =
-        statusFilter === "All Status" ||
-        candidate.status === statusFilter;
+        statusFilter === "All Status" || candidate.status === statusFilter;
 
       const matchesCountry =
         countryFilter === "All Countries" ||
         candidate.country === countryFilter;
 
-      return (
-        matchesSearch &&
-        matchesStatus &&
-        matchesCountry
-      );
+      return matchesSearch && matchesStatus && matchesCountry;
     });
-  }, [
-    candidates,
-    search,
-    statusFilter,
-    countryFilter,
-  ]);
+  }, [candidates, search, statusFilter, countryFilter]);
 
   const stats = {
     total: candidates.length,
-
-    newLead: candidates.filter(
-      (c) => c.status === "New Lead"
-    ).length,
-
+    newLead: candidates.filter((c) => c.status === "New Lead").length,
     visaProcessing: candidates.filter(
       (c) => c.status === "Visa Processing"
     ).length,
-
-    visaApproved: candidates.filter(
-      (c) => c.status === "Visa Approved"
-    ).length,
-
-    travelled: candidates.filter(
-      (c) => c.status === "Travelled"
-    ).length,
-
-    working: candidates.filter(
-      (c) => c.status === "Working in Russia"
-    ).length,
+    travelled: candidates.filter((c) => c.status === "Travelled").length,
   };
 
-  function formatDate(date: string | null) {
-    if (!date) return "—";
+  function formatDate(value: string | null) {
+    if (!value) return "—";
 
-    const parsed = new Date(date);
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "—";
 
-    if (Number.isNaN(parsed.getTime())) {
-      return "—";
-    }
-
-    return parsed.toLocaleDateString("en-GB", {
+    return date.toLocaleDateString("en-GB", {
       day: "2-digit",
       month: "short",
       year: "numeric",
     });
   }
 
-  function formatMoney(
-    amount: number | null,
-    currency = "INR"
-  ) {
-    if (amount === null || amount === undefined) {
-      return "—";
-    }
+  function formatMoney(value: number | null, currency = "INR") {
+    if (value === null || value === undefined) return "—";
 
-    return `${currency} ${Number(amount).toLocaleString(
-      "en-IN"
-    )}`;
+    return `${currency} ${Number(value).toLocaleString("en-IN", {
+      maximumFractionDigits: 2,
+    })}`;
   }
 
-  function openActions(candidate: Candidate) {
-    setSelectedCandidate(candidate);
-    setPopup("actions");
+  function serviceFee(candidate: Candidate) {
+    return candidate.registration_fee ?? 0;
   }
 
-  function closePopup() {
-    setSelectedCandidate(null);
-    setPopup(null);
+  function totalServiceFee(candidate: Candidate) {
+    return candidate.total_amount ?? serviceFee(candidate);
   }
 
-  async function openDocument(
-    filePath: string | null,
-    title: string
-  ) {
-    if (!filePath) {
-      alert(`${title} document is not uploaded.`);
-      return;
-    }
+  function balance(candidate: Candidate) {
+    return Math.max(
+      0,
+      totalServiceFee(candidate) - (candidate.amount_paid ?? 0)
+    );
+  }
 
-    const { data, error } = await supabase.storage
-      .from("candidate-documents")
-      .createSignedUrl(filePath, 3600);
+  useEffect(() => {
+    if (!editCandidate) return;
 
-    if (error || !data?.signedUrl) {
-      alert(
-        error?.message ||
-          "Unable to open document."
+    const currency = editCandidate.payment_currency || "INR";
+    if (currency === "INR") {
+      setEditCandidate((current) =>
+        current
+          ? {
+              ...current,
+              exchange_rate_to_inr: 1,
+              service_fee_inr: Number(current.registration_fee ?? 0),
+              total_amount_inr: Number(current.registration_fee ?? 0),
+            }
+          : current
       );
       return;
     }
 
-    window.open(data.signedUrl, "_blank");
+    let cancelled = false;
+
+    async function loadEditRate() {
+      setEditRateLoading(true);
+      try {
+        const response = await fetch(
+          `/api/exchange-rate?from=${encodeURIComponent(currency)}&to=INR`
+        );
+        const data = await response.json();
+        const rate = Number(data?.rate);
+
+        if (!cancelled && response.ok && Number.isFinite(rate) && rate > 0) {
+          setEditCandidate((current) => {
+            if (!current) return current;
+            const fee = Number(current.registration_fee ?? 0);
+            return {
+              ...current,
+              exchange_rate_to_inr: rate,
+              service_fee_inr: fee * rate,
+              total_amount_inr: fee * rate,
+            };
+          });
+        }
+      } catch {
+        // Keep the last saved conversion if the rate service is unavailable.
+      } finally {
+        if (!cancelled) setEditRateLoading(false);
+      }
+    }
+
+    void loadEditRate();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [editCandidate?.id, editCandidate?.payment_currency]);
+
+  function openEdit(candidate: Candidate) {
+    setEditError("");
+    setEditDocumentFile(null);
+    setEditCandidate({ ...candidate });
+  }
+
+  function closeEdit() {
+    if (editSaving) return;
+    setEditCandidate(null);
+    setEditDocumentFile(null);
+    setEditError("");
+  }
+
+  function handleEditDocument(event: ChangeEvent<HTMLInputElement>) {
+    setEditError("");
+
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) {
+      setEditError("Candidate Documents must be a PDF file.");
+      event.target.value = "";
+      return;
+    }
+
+    if (file.size > MAX_FILE_SIZE) {
+      setEditError("Candidate Documents PDF must be 20 MB or smaller.");
+      event.target.value = "";
+      return;
+    }
+
+    setEditDocumentFile(file);
+  }
+
+  async function saveEdit() {
+    if (!editCandidate) return;
+
+    setEditError("");
+
+    if (!editCandidate.full_name.trim()) {
+      setEditError("Candidate name is required.");
+      return;
+    }
+
+    if (!editCandidate.mobile?.trim()) {
+      setEditError("Mobile number is required.");
+      return;
+    }
+
+    if (!editCandidate.country?.trim()) {
+      setEditError("Country is required.");
+      return;
+    }
+
+    if (!editCandidate.job_position?.trim()) {
+      setEditError("Job position is required.");
+      return;
+    }
+
+    if (
+      editCandidate.going_date &&
+      editCandidate.return_date &&
+      editCandidate.return_date < editCandidate.going_date
+    ) {
+      setEditError("Return date cannot be before going date.");
+      return;
+    }
+
+    setEditSaving(true);
+
+    let uploadedNewPath: string | null = null;
+    const existingDocument = editCandidate.other_file
+      ? getStoragePath(editCandidate.other_file)
+      : null;
+
+    const fee = Number(editCandidate.registration_fee ?? 0);
+    const paid = Number(editCandidate.amount_paid ?? 0);
+    const total = Math.max(0, Number.isFinite(fee) ? fee : 0);
+    const safePaid = Math.max(0, Number.isFinite(paid) ? paid : 0);
+
+    try {
+      if (editDocumentFile) {
+        const safeName = editDocumentFile.name.replace(
+          /[^a-zA-Z0-9._-]/g,
+          "_"
+        );
+
+        uploadedNewPath = `${editCandidate.id}/documents-${crypto.randomUUID()}-${safeName}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from("candidate-documents")
+          .upload(uploadedNewPath, editDocumentFile, {
+            cacheControl: "3600",
+            upsert: false,
+            contentType: "application/pdf",
+          });
+
+        if (uploadError) {
+          throw new Error(`Document upload failed: ${uploadError.message}`);
+        }
+      }
+
+      const { data, error } = await supabase
+        .from("job_candidates")
+        .update({
+        full_name: editCandidate.full_name.trim(),
+        father_name: editCandidate.father_name || null,
+        mobile: editCandidate.mobile || null,
+        whatsapp: editCandidate.whatsapp || null,
+        email: editCandidate.email || null,
+        address: editCandidate.address || null,
+        city: editCandidate.city || null,
+        state: editCandidate.state || null,
+        date_of_birth: editCandidate.date_of_birth || null,
+
+        passport_number: editCandidate.passport_number || null,
+        passport_expiry: editCandidate.passport_expiry || null,
+
+        country: editCandidate.country || null,
+        job_position: editCandidate.job_position || null,
+        employer_name: editCandidate.employer_name || null,
+        salary: editCandidate.salary,
+        salary_currency: editCandidate.salary_currency || null,
+        contract_duration: editCandidate.contract_duration || null,
+        job_location: editCandidate.job_location || null,
+        joining_date: editCandidate.joining_date || null,
+        status: editCandidate.status || "New Lead",
+
+        visa_type: editCandidate.visa_type || null,
+        visa_number: editCandidate.visa_number || null,
+        visa_valid_till: editCandidate.visa_valid_till || null,
+        going_date: editCandidate.going_date || null,
+        return_date: editCandidate.return_date || null,
+        flight_number: editCandidate.flight_number || null,
+        departure_airport: editCandidate.departure_airport || null,
+        arrival_airport: editCandidate.arrival_airport || null,
+
+        registration_fee: total,
+        visa_fee: null,
+        ticket_amount: null,
+        other_charges: null,
+        total_amount: total,
+        amount_paid: safePaid,
+        balance_amount: Math.max(0, total - safePaid),
+        payment_currency: editCandidate.payment_currency || "USD",
+        last_payment_date: editCandidate.last_payment_date || null,
+        payment_method: editCandidate.payment_method || null,
+
+        exchange_rate_to_inr: editCandidate.exchange_rate_to_inr,
+        service_fee_inr: editCandidate.service_fee_inr,
+        total_amount_inr: editCandidate.total_amount_inr,
+        other_file: uploadedNewPath || editCandidate.other_file || null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", editCandidate.id)
+      .select("*")
+      .single();
+
+      if (error || !data) {
+        if (uploadedNewPath) {
+          await supabase.storage
+            .from("candidate-documents")
+            .remove([uploadedNewPath]);
+        }
+
+        throw new Error(error?.message || "Unable to update candidate.");
+      }
+
+      if (uploadedNewPath && existingDocument) {
+        await supabase.storage
+          .from("candidate-documents")
+          .remove([existingDocument]);
+      }
+
+      setCandidates((current) =>
+        current.map((candidate) =>
+          candidate.id === editCandidate.id ? (data as Candidate) : candidate
+        )
+      );
+
+      setOpenId(editCandidate.id);
+      setEditDocumentFile(null);
+      setEditSaving(false);
+      closeEdit();
+    } catch (saveError) {
+      if (uploadedNewPath) {
+        await supabase.storage
+          .from("candidate-documents")
+          .remove([uploadedNewPath]);
+      }
+
+      setEditError(
+        saveError instanceof Error
+          ? saveError.message
+          : "Unable to update candidate."
+      );
+      setEditSaving(false);
+    }
+  }
+
+  async function openDocument(filePath: string | null, title: string) {
+    if (!filePath) {
+      window.alert(`${title} is not uploaded.`);
+      return;
+    }
+
+    const storagePath = getStoragePath(filePath);
+
+    const { data, error } = await supabase.storage
+      .from("candidate-documents")
+      .createSignedUrl(storagePath, 60 * 10);
+
+    if (error || !data?.signedUrl) {
+      window.alert(error?.message || "Unable to open document.");
+      return;
+    }
+
+    window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+  }
+
+  function getStoragePath(value: string) {
+    const marker =
+      "/storage/v1/object/public/candidate-documents/";
+
+    if (value.includes(marker)) {
+      return decodeURIComponent(value.split(marker)[1]);
+    }
+
+    return value;
   }
 
   async function deleteCandidate(candidate: Candidate) {
     const confirmed = window.confirm(
-      `Delete candidate "${candidate.full_name}"?`
+      `Delete candidate "${candidate.full_name}"? This cannot be undone.`
     );
 
     if (!confirmed) return;
 
-    try {
-      setDeleting(true);
+    setDeletingId(candidate.id);
 
-      const files = [
-        candidate.passport_file,
-        candidate.photo_file,
-        candidate.cv_file,
-        candidate.offer_letter_file,
-        candidate.contract_file,
-        candidate.invitation_file,
-        candidate.visa_file,
-        candidate.ticket_file,
-        candidate.medical_file,
-        candidate.insurance_file,
-        candidate.other_file,
-      ].filter(
-        (file): file is string => Boolean(file)
-      );
+    const files = documentFields
+      .map((field) => candidate[field.key])
+      .filter((file): file is string => typeof file === "string" && Boolean(file))
+      .map(getStoragePath);
 
-      if (files.length > 0) {
-        await supabase.storage
-          .from("candidate-documents")
-          .remove(files);
-      }
-
-      const { error } = await supabase
-        .from("job_candidates")
-        .delete()
-        .eq("id", candidate.id);
-
-      if (error) {
-        alert(error.message);
-        return;
-      }
-
-      setCandidates((prev) =>
-        prev.filter(
-          (item) => item.id !== candidate.id
-        )
-      );
-
-      closePopup();
-    } catch (err) {
-      alert(
-        err instanceof Error
-          ? err.message
-          : "Unable to delete candidate."
-      );
-    } finally {
-      setDeleting(false);
+    if (files.length) {
+      await supabase.storage.from("candidate-documents").remove(files);
     }
+
+    const { error } = await supabase
+      .from("job_candidates")
+      .delete()
+      .eq("id", candidate.id);
+
+    if (error) {
+      window.alert(error.message);
+      setDeletingId(null);
+      return;
+    }
+
+    setCandidates((current) =>
+      current.filter((item) => item.id !== candidate.id)
+    );
+
+    if (openId === candidate.id) setOpenId(null);
+    if (editCandidate?.id === candidate.id) setEditCandidate(null);
+
+    setDeletingId(null);
   }
 
-  function printPDF(candidate: Candidate) {
+  function printCandidate(candidate: Candidate) {
     const doc = new jsPDF();
 
     doc.setFontSize(18);
@@ -369,89 +582,45 @@ export default function CandidatesPage() {
 
     doc.setFontSize(10);
     doc.setTextColor(100);
-    doc.text(
-      "World Global Manpower Private Limited",
-      20,
-      27
-    );
+    doc.text("World Global Manpower Pvt. Ltd.", 20, 27);
 
     doc.setTextColor(0);
-    doc.setFontSize(11);
-
-    let y = 42;
 
     const rows = [
-      ["Full Name", candidate.full_name],
-      ["Father's Name", candidate.father_name || "—"],
+      ["Name", candidate.full_name],
+      ["Father Name", candidate.father_name || "—"],
       ["Mobile", candidate.mobile || "—"],
-      ["WhatsApp", candidate.whatsapp || "—"],
-      ["Email", candidate.email || "—"],
       ["Country", candidate.country || "—"],
       ["Job Position", candidate.job_position || "—"],
       ["Employer", candidate.employer_name || "—"],
-      [
-        "Salary",
-        candidate.salary
-          ? formatMoney(
-              candidate.salary,
-              candidate.salary_currency || "RUB"
-            )
-          : "—",
-      ],
-      ["Job Location", candidate.job_location || "—"],
+      ["Salary", formatMoney(candidate.salary, candidate.salary_currency || "RUB")],
       ["Status", candidate.status || "—"],
+      ["Passport", candidate.passport_number || "—"],
+      ["Visa", candidate.visa_number || "—"],
+      ["Visa Valid Till", formatDate(candidate.visa_valid_till)],
+      ["Going Date", formatDate(candidate.going_date)],
+      ["Return Date", formatDate(candidate.return_date)],
       [
-        "Passport",
-        candidate.passport_number || "—",
-      ],
-      [
-        "Passport Expiry",
-        formatDate(candidate.passport_expiry),
-      ],
-      ["Visa Type", candidate.visa_type || "—"],
-      ["Visa Number", candidate.visa_number || "—"],
-      [
-        "Visa Valid Till",
-        formatDate(candidate.visa_valid_till),
-      ],
-      [
-        "Going Date",
-        formatDate(candidate.going_date),
-      ],
-      [
-        "Return Date",
-        formatDate(candidate.return_date),
-      ],
-      [
-        "Total Amount",
-        formatMoney(
-          candidate.total_amount,
-          candidate.payment_currency || "INR"
-        ),
+        "Service Fee",
+        formatMoney(candidate.registration_fee, candidate.payment_currency || "USD"),
       ],
       [
         "Amount Paid",
-        formatMoney(
-          candidate.amount_paid,
-          candidate.payment_currency || "INR"
-        ),
+        formatMoney(candidate.amount_paid, candidate.payment_currency || "USD"),
       ],
       [
         "Balance",
-        formatMoney(
-          candidate.balance_amount,
-          candidate.payment_currency || "INR"
-        ),
+        formatMoney(balance(candidate), candidate.payment_currency || "USD"),
       ],
     ];
+
+    let y = 42;
 
     rows.forEach(([label, value]) => {
       doc.setFont("helvetica", "bold");
       doc.text(`${label}:`, 20, y);
-
       doc.setFont("helvetica", "normal");
       doc.text(String(value), 70, y);
-
       y += 8;
 
       if (y > 275) {
@@ -460,1038 +629,709 @@ export default function CandidatesPage() {
       }
     });
 
-    doc.setFontSize(8);
-    doc.setTextColor(120);
-    doc.text(
-      `Generated on ${new Date().toLocaleDateString(
-        "en-GB"
-      )}`,
-      20,
-      285
-    );
-
     doc.save(
-      `${candidate.full_name.replace(
-        /\s+/g,
-        "-"
-      )}-candidate.pdf`
+      `${candidate.full_name.replace(/\s+/g, "-")}-candidate.pdf`
     );
   }
 
   return (
-    <main className="min-h-screen bg-slate-50 text-slate-900">
-
-      {/* HEADER */}
+    <main className="min-h-screen bg-[#f5f7fb] text-slate-900">
       <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
-
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-5 sm:px-6 lg:px-8">
           <div className="flex items-center gap-3">
-
-            <button
-              onClick={() => router.push("/")}
-              className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"
-            >
-              <ArrowLeft size={20} />
-            </button>
-
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-slate-900 text-white">
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-lg shadow-indigo-600/20">
               <BriefcaseBusiness size={21} />
             </div>
 
             <div>
-              <h1 className="text-lg font-bold">
+              <p className="text-xs font-bold uppercase tracking-[0.18em] text-indigo-600">
+                Recruitment
+              </p>
+              <h1 className="text-xl font-bold tracking-tight sm:text-2xl">
                 Job Candidates
               </h1>
-
               <p className="text-xs text-slate-500">
-                World Global Manpower Pvt. Ltd.
+                Simple candidate management
               </p>
             </div>
-
           </div>
 
           <button
-            onClick={() =>
-              router.push("/candidates/add")
-            }
-            className="flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800"
+            type="button"
+            onClick={() => router.push("/candidates/add")}
+            className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white shadow-lg shadow-indigo-600/20 hover:bg-indigo-700"
           >
-            <Plus size={18} />
+            <Plus size={17} />
             Add Candidate
           </button>
-
         </div>
       </header>
 
-      <div className="mx-auto max-w-7xl px-6 py-7">
-
-        {/* TITLE */}
-        <div className="mb-7">
-          <h2 className="text-2xl font-bold tracking-tight">
-            Recruitment Dashboard
-          </h2>
-
-          <p className="mt-1 text-sm text-slate-500">
-            Manage candidates, jobs, visas, payments and deployments.
-          </p>
+      <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <StatCard title="Total Candidates" value={stats.total} icon={<UserRound size={19} />} />
+          <StatCard title="New Leads" value={stats.newLead} icon={<UserRound size={19} />} />
+          <StatCard title="Visa Processing" value={stats.visaProcessing} icon={<FileText size={19} />} />
+          <StatCard title="Travelled" value={stats.travelled} icon={<Plane size={19} />} />
         </div>
 
-        {/* ERROR */}
         {errorMessage && (
-          <div className="mb-6 flex flex-col gap-3 rounded-xl border border-red-200 bg-red-50 p-4 sm:flex-row sm:items-center sm:justify-between">
-
+          <div className="mt-5 flex flex-col gap-3 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <p className="font-semibold text-red-700">
-                Unable to load candidates
-              </p>
-
-              <p className="mt-1 text-sm text-red-600">
-                {errorMessage}
-              </p>
+              <p className="font-bold">Unable to load candidates</p>
+              <p className="mt-1">{errorMessage}</p>
             </div>
-
             <button
-              onClick={fetchCandidates}
-              className="flex items-center justify-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700"
+              type="button"
+              onClick={() => void fetchCandidates()}
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-2.5 font-bold text-white"
             >
-              <RefreshCw size={16} />
+              <RefreshCw size={15} />
               Retry
             </button>
-
           </div>
         )}
 
-        {/* STATS */}
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-
-          <StatCard
-            title="Total Candidates"
-            value={stats.total}
-            icon={<Users size={20} />}
-          />
-
-          <StatCard
-            title="New Leads"
-            value={stats.newLead}
-            icon={<Users size={20} />}
-          />
-
-          <StatCard
-            title="Visa Processing"
-            value={stats.visaProcessing}
-            icon={<FileText size={20} />}
-          />
-
-          <StatCard
-            title="Visa Approved"
-            value={stats.visaApproved}
-            icon={<FileText size={20} />}
-          />
-
-          <StatCard
-            title="Travelled"
-            value={stats.travelled}
-            icon={<Plane size={20} />}
-          />
-
-          <StatCard
-            title="Working in Russia"
-            value={stats.working}
-            icon={<BriefcaseBusiness size={20} />}
-          />
-
-        </div>
-
-        {/* FILTERS */}
-        <div className="mt-8 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-
-            <div className="relative w-full lg:max-w-lg">
-
+        <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex flex-col gap-3 lg:flex-row">
+            <div className="relative flex-1">
               <Search
                 size={18}
-                className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"
               />
-
               <input
                 value={search}
-                onChange={(e) =>
-                  setSearch(e.target.value)
-                }
+                onChange={(event) => setSearch(event.target.value)}
                 placeholder="Search name, mobile, job, employer or passport..."
-                className="w-full rounded-lg border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-4 text-sm outline-none focus:border-slate-400 focus:bg-white"
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 py-3 pl-10 pr-4 text-sm outline-none focus:border-indigo-400 focus:bg-white focus:ring-4 focus:ring-indigo-500/10"
               />
-
             </div>
 
-            <div className="flex flex-col gap-2 sm:flex-row">
+            <select
+              value={countryFilter}
+              onChange={(event) => setCountryFilter(event.target.value)}
+              className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-indigo-400"
+            >
+              <option>All Countries</option>
+              {countries.map((country) => (
+                <option key={country}>{country}</option>
+              ))}
+            </select>
 
-              <select
-                value={countryFilter}
-                onChange={(e) =>
-                  setCountryFilter(e.target.value)
-                }
-                className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none"
-              >
-                <option>All Countries</option>
+            <select
+              value={statusFilter}
+              onChange={(event) => setStatusFilter(event.target.value)}
+              className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-indigo-400"
+            >
+              <option>All Status</option>
+              {statuses.map((status) => (
+                <option key={status}>{status}</option>
+              ))}
+            </select>
 
-                {countries.map((country) => (
-                  <option
-                    key={country}
-                    value={country}
-                  >
-                    {country}
-                  </option>
-                ))}
-              </select>
-
-              <select
-                value={statusFilter}
-                onChange={(e) =>
-                  setStatusFilter(e.target.value)
-                }
-                className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none"
-              >
-                <option>All Status</option>
-
-                {statuses.map((status) => (
-                  <option
-                    key={status}
-                    value={status}
-                  >
-                    {status}
-                  </option>
-                ))}
-              </select>
-
-            </div>
-
+            <button
+              type="button"
+              onClick={() => void fetchCandidates()}
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 py-3 text-sm font-bold text-slate-700 hover:bg-slate-50"
+            >
+              <RefreshCw size={16} />
+              Refresh
+            </button>
           </div>
-
         </div>
 
-        {/* TABLE */}
-        <div className="mt-5 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-
-          <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
-
-            <div>
-              <h3 className="font-semibold">
-                Candidates
-              </h3>
-
-              <p className="mt-0.5 text-xs text-slate-500">
-                Recruitment and deployment records
-              </p>
-            </div>
-
-            <div className="flex items-center gap-2 text-sm text-slate-500">
-              <Users size={17} />
-              {filteredCandidates.length} candidates
-            </div>
-
+        <section className="mt-5 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="border-b border-slate-200 px-5 py-4">
+            <h2 className="font-bold text-slate-900">Candidates</h2>
+            <p className="mt-0.5 text-xs text-slate-500">
+              Click a candidate to see the complete recruitment record.
+            </p>
           </div>
 
           {loading ? (
-            <div className="flex items-center justify-center py-16 text-slate-500">
-              <Loader2
-                size={22}
-                className="mr-2 animate-spin"
-              />
+            <div className="flex items-center justify-center py-16 text-sm text-slate-500">
+              <Loader2 size={20} className="mr-2 animate-spin" />
               Loading candidates...
             </div>
-          ) : errorMessage ? (
-            <div className="flex flex-col items-center justify-center py-16 text-center">
-
-              <FileText
-                size={40}
-                className="mb-3 text-red-300"
-              />
-
-              <h3 className="font-semibold">
-                Candidates could not be loaded
-              </h3>
-
-              <button
-                onClick={fetchCandidates}
-                className="mt-4 flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white"
-              >
-                <RefreshCw size={16} />
-                Try Again
-              </button>
-
-            </div>
           ) : filteredCandidates.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 text-center">
-
-              <Users
-                size={40}
-                className="mb-3 text-slate-300"
-              />
-
-              <h3 className="font-semibold">
-                No candidates found
-              </h3>
-
-              <p className="mt-1 text-sm text-slate-500">
-                Add a candidate to start recruitment tracking.
+            <div className="flex flex-col items-center justify-center px-5 py-16 text-center">
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
+                <UserRound size={25} />
+              </div>
+              <h3 className="mt-4 font-bold">No candidates found</h3>
+              <p className="mt-1 max-w-md text-sm text-slate-500">
+                {search || statusFilter !== "All Status" || countryFilter !== "All Countries"
+                  ? "Try changing your search or filters."
+                  : "Add your first candidate to start recruitment tracking."}
               </p>
-
-              <button
-                onClick={() =>
-                  router.push("/candidates/add")
-                }
-                className="mt-4 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white"
-              >
-                Add Candidate
-              </button>
-
+              {!search && statusFilter === "All Status" && countryFilter === "All Countries" && (
+                <button
+                  type="button"
+                  onClick={() => router.push("/candidates/add")}
+                  className="mt-5 inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white"
+                >
+                  <Plus size={16} />
+                  Add Candidate
+                </button>
+              )}
             </div>
           ) : (
-            <div className="overflow-x-auto">
+            <div className="divide-y divide-slate-100">
+              {filteredCandidates.map((candidate) => {
+                const isOpen = openId === candidate.id;
+                const documentCount = documentFields.filter(
+                  (field) => Boolean(candidate[field.key])
+                ).length;
 
-              <table className="w-full min-w-[1250px] text-left">
-
-                <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-                  <tr>
-
-                    <th className="px-5 py-3 font-semibold">
-                      Candidate
-                    </th>
-
-                    <th className="px-5 py-3 font-semibold">
-                      Job
-                    </th>
-
-                    <th className="px-5 py-3 font-semibold">
-                      Employer
-                    </th>
-
-                    <th className="px-5 py-3 font-semibold">
-                      Country
-                    </th>
-
-                    <th className="px-5 py-3 font-semibold">
-                      Status
-                    </th>
-
-                    <th className="px-5 py-3 font-semibold">
-                      Total
-                    </th>
-
-                    <th className="px-5 py-3 font-semibold">
-                      Balance
-                    </th>
-
-                    <th className="px-5 py-3 font-semibold">
-                      Travel
-                    </th>
-
-                    <th className="px-5 py-3 text-right font-semibold">
-                      Action
-                    </th>
-
-                  </tr>
-                </thead>
-
-                <tbody className="divide-y divide-slate-100">
-
-                  {filteredCandidates.map((candidate) => (
-
-                    <tr
-                      key={candidate.id}
-                      className="transition hover:bg-slate-50"
+                return (
+                  <div key={candidate.id}>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setOpenId(isOpen ? null : candidate.id)
+                      }
+                      className="w-full px-4 py-4 text-left transition hover:bg-slate-50 sm:px-5"
                     >
-
-                      <td className="px-5 py-4">
-
-                        <div className="font-semibold">
-                          {candidate.full_name}
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-sm font-bold text-indigo-700">
+                          {candidate.full_name
+                            .split(" ")
+                            .map((part) => part[0])
+                            .slice(0, 2)
+                            .join("")
+                            .toUpperCase()}
                         </div>
 
-                        <div className="mt-1 flex items-center gap-1 text-xs text-slate-400">
-                          <Phone size={12} />
-                          {candidate.mobile || "No mobile"}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h3 className="truncate font-bold text-slate-900">
+                              {candidate.full_name}
+                            </h3>
+                            <StatusBadge status={candidate.status || "New Lead"} />
+                          </div>
+
+                          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
+                            <span>{candidate.country || "Country not set"}</span>
+                            <span>•</span>
+                            <span>{candidate.job_position || "Job not selected"}</span>
+                            <span>•</span>
+                            <span>{candidate.mobile || "No mobile"}</span>
+                          </div>
                         </div>
 
-                      </td>
-
-                      <td className="px-5 py-4">
-
-                        <div className="text-sm font-medium">
-                          {candidate.job_position || "—"}
+                        <div className="hidden text-right sm:block">
+                          <p className="text-xs text-slate-400">Documents</p>
+                          <p className="mt-1 text-sm font-bold text-slate-700">
+                            {documentCount} / {documentFields.length}
+                          </p>
                         </div>
 
-                        <div className="mt-1 text-xs text-slate-400">
-                          {candidate.job_location || "Location not set"}
-                        </div>
-
-                      </td>
-
-                      <td className="px-5 py-4 text-sm">
-                        {candidate.employer_name || "—"}
-                      </td>
-
-                      <td className="px-5 py-4">
-
-                        <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium">
-                          {candidate.country || "—"}
-                        </span>
-
-                      </td>
-
-                      <td className="px-5 py-4">
-                        <StatusBadge
-                          status={
-                            candidate.status ||
-                            "New Lead"
-                          }
-                        />
-                      </td>
-
-                      <td className="px-5 py-4 text-sm font-semibold">
-                        {formatMoney(
-                          candidate.total_amount,
-                          candidate.payment_currency ||
-                            "INR"
+                        {isOpen ? (
+                          <ChevronUp className="h-5 w-5 shrink-0 text-slate-400" />
+                        ) : (
+                          <ChevronDown className="h-5 w-5 shrink-0 text-slate-400" />
                         )}
-                      </td>
+                      </div>
+                    </button>
 
-                      <td className="px-5 py-4">
+                    {isOpen && (
+                      <div className="border-t border-slate-100 bg-slate-50/70 px-4 py-5 sm:px-5">
+                        <div className="grid gap-4 lg:grid-cols-3">
+                          <InfoCard
+                            title="Personal"
+                            icon={<UserRound size={17} />}
+                            items={[
+                              ["Father Name", candidate.father_name],
+                              ["Mobile", candidate.mobile],
+                              ["WhatsApp", candidate.whatsapp],
+                              ["Email", candidate.email],
+                              ["City", candidate.city],
+                              ["State", candidate.state],
+                            ]}
+                          />
 
-                        <span
-                          className={`text-sm font-semibold ${
-                            Number(
-                              candidate.balance_amount || 0
-                            ) > 0
-                              ? "text-red-600"
-                              : "text-green-600"
-                          }`}
-                        >
-                          {formatMoney(
-                            candidate.balance_amount,
-                            candidate.payment_currency ||
-                              "INR"
-                          )}
-                        </span>
+                          <InfoCard
+                            title="Job"
+                            icon={<BriefcaseBusiness size={17} />}
+                            items={[
+                              ["Country", candidate.country],
+                              ["Position", candidate.job_position],
+                              ["Employer", candidate.employer_name],
+                              ["Location", candidate.job_location],
+                              [
+                                "Salary",
+                                candidate.salary
+                                  ? formatMoney(
+                                      candidate.salary,
+                                      candidate.salary_currency || "RUB"
+                                    )
+                                  : "—",
+                              ],
+                              ["Contract", candidate.contract_duration],
+                              ["Joining", formatDate(candidate.joining_date)],
+                            ]}
+                          />
 
-                      </td>
+                          <InfoCard
+                            title="Passport & Visa"
+                            icon={<FileText size={17} />}
+                            items={[
+                              ["Passport", candidate.passport_number],
+                              ["Passport Expiry", formatDate(candidate.passport_expiry)],
+                              ["Visa Type", candidate.visa_type],
+                              ["Visa Number", candidate.visa_number],
+                              ["Visa Valid Till", formatDate(candidate.visa_valid_till)],
+                            ]}
+                          />
 
-                      <td className="px-5 py-4 text-sm">
-                        {formatDate(
-                          candidate.going_date
-                        )}
-                      </td>
+                          <InfoCard
+                            title="Travel"
+                            icon={<Plane size={17} />}
+                            items={[
+                              ["Going Date", formatDate(candidate.going_date)],
+                              ["Return Date", formatDate(candidate.return_date)],
+                              ["Flight", candidate.flight_number],
+                              ["Departure", candidate.departure_airport],
+                              ["Arrival", candidate.arrival_airport],
+                            ]}
+                          />
 
-                      <td className="px-5 py-4 text-right">
+                          <InfoCard
+                            title="Payment"
+                            icon={<Wallet size={17} />}
+                            items={[
+                              [
+                                "Service Fee",
+                                formatMoney(
+                                  serviceFee(candidate),
+                                  candidate.payment_currency || "USD"
+                                ),
+                              ],
+                              [
+                                "Paid",
+                                formatMoney(
+                                  candidate.amount_paid,
+                                  candidate.payment_currency || "USD"
+                                ),
+                              ],
+                              [
+                                "Balance",
+                                formatMoney(
+                                  balance(candidate),
+                                  candidate.payment_currency || "USD"
+                                ),
+                              ],
+                              ["Last Payment", formatDate(candidate.last_payment_date)],
+                              ["Method", candidate.payment_method],
+                            ]}
+                          />
 
-                        <button
-                          onClick={() =>
-                            openActions(candidate)
-                          }
-                          className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-900"
-                        >
-                          <MoreVertical size={19} />
-                        </button>
+                          <InfoCard
+                            title="Contact"
+                            icon={<Mail size={17} />}
+                            items={[
+                              ["Email", candidate.email],
+                              ["Mobile", candidate.mobile],
+                              ["Address", candidate.address],
+                              ["City", candidate.city],
+                              ["State", candidate.state],
+                            ]}
+                          />
+                        </div>
 
-                      </td>
+                        <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
+                          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                            <div>
+                              <p className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                                Documents
+                              </p>
+                              <p className="mt-1 text-sm font-bold text-slate-800">
+                                {documentCount} of {documentFields.length} uploaded
+                              </p>
+                            </div>
 
-                    </tr>
+                            <div className="flex flex-wrap gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setDocumentsCandidate(candidate)}
+                                className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50"
+                              >
+                                <FileText size={15} />
+                                View Documents
+                              </button>
 
-                  ))}
+                              <button
+                                type="button"
+                                onClick={() => openEdit(candidate)}
+                                className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-3.5 py-2.5 text-xs font-bold text-white hover:bg-indigo-700"
+                              >
+                                <Pencil size={15} />
+                                Edit
+                              </button>
 
-                </tbody>
+                              <button
+                                type="button"
+                                onClick={() => printCandidate(candidate)}
+                                className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50"
+                              >
+                                <Printer size={15} />
+                                Print
+                              </button>
 
-              </table>
-
+                              <button
+                                type="button"
+                                disabled={deletingId === candidate.id}
+                                onClick={() => void deleteCandidate(candidate)}
+                                className="inline-flex items-center gap-2 rounded-xl border border-red-200 px-3.5 py-2.5 text-xs font-bold text-red-600 hover:bg-red-50 disabled:opacity-50"
+                              >
+                                {deletingId === candidate.id ? (
+                                  <Loader2 size={15} className="animate-spin" />
+                                ) : (
+                                  <Trash2 size={15} />
+                                )}
+                                Delete
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
-
-        </div>
-
-        <div className="mt-5 flex items-center gap-2 text-xs text-slate-400">
-          <FileText size={14} />
-          Candidate passport, visa, job and payment records are stored securely.
-        </div>
-
-        {/* COMPANY INFORMATION */}
-        <section className="mt-8 overflow-hidden rounded-2xl shadow-sm">
-          <div className="grid bg-[#13838c] text-white md:grid-cols-2 lg:grid-cols-4">
-            <CompanyInfo
-              icon={<Building2 size={22} />}
-              label="COMPANY"
-              title="World Global Manpower Pvt. Ltd."
-              description="Overseas recruitment and manpower services for international employment opportunities."
-            />
-
-            <CompanyInfo
-              icon={<MapPin size={22} />}
-              label="OFFICE ADDRESS"
-              title="Rohini Sector 7, New Delhi, India"
-            />
-
-            <CompanyInfo
-              icon={<Mail size={22} />}
-              label="EMAIL"
-              title="hello@wgmanpower.com"
-            />
-
-            <CompanyInfo
-              icon={<Globe size={22} />}
-              label="WEBSITE"
-              title="wgmanpower.com"
-            />
-          </div>
-
-          <div className="flex flex-col gap-3 bg-white px-6 py-4 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between">
-            <p>
-              © {new Date().getFullYear()} World Global Manpower Pvt. Ltd. All rights reserved.
-            </p>
-
-            <p>
-              Staff Travel &amp; Recruitment Management System
-            </p>
-          </div>
         </section>
-
       </div>
 
-      {/* ACTION MODAL */}
-      {popup === "actions" &&
-        selectedCandidate && (
-          <ModalOverlay onClose={closePopup}>
-
-            <div className="mx-auto w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
-
-              <div className="mb-5 flex items-start justify-between">
-
-                <div>
-                  <h2 className="text-lg font-bold">
-                    {selectedCandidate.full_name}
-                  </h2>
-
-                  <p className="mt-1 text-sm text-slate-500">
-                    {selectedCandidate.job_position ||
-                      "Job Candidate"}{" "}
-                    •{" "}
-                    {selectedCandidate.country ||
-                      "Country not set"}
-                  </p>
-                </div>
-
-                <button
-                  onClick={closePopup}
-                  className="rounded-lg p-2 hover:bg-slate-100"
-                >
-                  <X size={18} />
-                </button>
-
+      {documentsCandidate && (
+        <ModalOverlay onClose={() => setDocumentsCandidate(null)}>
+          <div className="mx-auto max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-3xl bg-white shadow-2xl">
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-200 bg-white px-5 py-4 sm:px-6">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wider text-indigo-600">
+                  Documents
+                </p>
+                <h2 className="mt-1 text-lg font-bold text-slate-950">
+                  {documentsCandidate.full_name}
+                </h2>
               </div>
-
-              <div className="space-y-2">
-
-                <ActionButton
-                  icon={<Eye size={17} />}
-                  label="View Candidate Details"
-                  onClick={() =>
-                    setPopup("details")
-                  }
-                />
-
-                <ActionButton
-                  icon={<FileText size={17} />}
-                  label="View Documents"
-                  onClick={() =>
-                    setPopup("documents")
-                  }
-                />
-
-                <ActionButton
-                  icon={<Pencil size={17} />}
-                  label="Edit Candidate"
-                  onClick={() =>
-                    router.push(
-                      `/candidates/${selectedCandidate.id}/edit`
-                    )
-                  }
-                />
-
-                <ActionButton
-                  icon={<Printer size={17} />}
-                  label="Print / Download PDF"
-                  onClick={() => {
-                    printPDF(selectedCandidate);
-                    closePopup();
-                  }}
-                />
-
-                <button
-                  disabled={deleting}
-                  onClick={() =>
-                    deleteCandidate(
-                      selectedCandidate
-                    )
-                  }
-                  className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
-                >
-                  {deleting ? (
-                    <Loader2
-                      size={17}
-                      className="animate-spin"
-                    />
-                  ) : (
-                    <Trash2 size={17} />
-                  )}
-
-                  Delete Candidate
-                </button>
-
-              </div>
-
+              <button
+                type="button"
+                onClick={() => setDocumentsCandidate(null)}
+                className="rounded-xl p-2 text-slate-400 hover:bg-slate-100"
+              >
+                <X size={20} />
+              </button>
             </div>
 
-          </ModalOverlay>
-        )}
+            <div className="grid gap-3 p-5 sm:grid-cols-2 sm:p-6">
+              {documentFields.map((field) => {
+                const file = documentsCandidate[field.key] as string | null;
 
-      {/* DETAILS MODAL */}
-      {popup === "details" &&
-        selectedCandidate && (
-          <ModalOverlay onClose={closePopup}>
-
-            <div className="mx-auto max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white shadow-2xl">
-
-              <div className="sticky top-0 flex items-center justify-between border-b border-slate-200 bg-white px-6 py-5">
-
-                <div>
-                  <h2 className="text-xl font-bold">
-                    {selectedCandidate.full_name}
-                  </h2>
-
-                  <p className="text-sm text-slate-500">
-                    Candidate Details
-                  </p>
-                </div>
-
-                <button
-                  onClick={closePopup}
-                  className="rounded-lg p-2 hover:bg-slate-100"
-                >
-                  <X size={18} />
-                </button>
-
-              </div>
-
-              <div className="grid gap-5 p-6 md:grid-cols-2">
-
-                <InfoBlock
-                  title="Personal"
-                  items={[
-                    [
-                      "Father's Name",
-                      selectedCandidate.father_name,
-                    ],
-                    [
-                      "Mobile",
-                      selectedCandidate.mobile,
-                    ],
-                    [
-                      "WhatsApp",
-                      selectedCandidate.whatsapp,
-                    ],
-                    [
-                      "Email",
-                      selectedCandidate.email,
-                    ],
-                    [
-                      "City",
-                      selectedCandidate.city,
-                    ],
-                    [
-                      "State",
-                      selectedCandidate.state,
-                    ],
-                  ]}
-                />
-
-                <InfoBlock
-                  title="Job"
-                  items={[
-                    [
-                      "Country",
-                      selectedCandidate.country,
-                    ],
-                    [
-                      "Position",
-                      selectedCandidate.job_position,
-                    ],
-                    [
-                      "Employer",
-                      selectedCandidate.employer_name,
-                    ],
-                    [
-                      "Location",
-                      selectedCandidate.job_location,
-                    ],
-                    [
-                      "Salary",
-                      selectedCandidate.salary
-                        ? formatMoney(
-                            selectedCandidate.salary,
-                            selectedCandidate.salary_currency ||
-                              "RUB"
-                          )
-                        : null,
-                    ],
-                    [
-                      "Contract",
-                      selectedCandidate.contract_duration,
-                    ],
-                    [
-                      "Status",
-                      selectedCandidate.status,
-                    ],
-                  ]}
-                />
-
-                <InfoBlock
-                  title="Passport / Visa"
-                  items={[
-                    [
-                      "Passport",
-                      selectedCandidate.passport_number,
-                    ],
-                    [
-                      "Passport Expiry",
-                      formatDate(
-                        selectedCandidate.passport_expiry
-                      ),
-                    ],
-                    [
-                      "Visa Type",
-                      selectedCandidate.visa_type,
-                    ],
-                    [
-                      "Visa Number",
-                      selectedCandidate.visa_number,
-                    ],
-                    [
-                      "Visa Valid Till",
-                      formatDate(
-                        selectedCandidate.visa_valid_till
-                      ),
-                    ],
-                  ]}
-                />
-
-                <InfoBlock
-                  title="Travel"
-                  items={[
-                    [
-                      "Going Date",
-                      formatDate(
-                        selectedCandidate.going_date
-                      ),
-                    ],
-                    [
-                      "Return Date",
-                      formatDate(
-                        selectedCandidate.return_date
-                      ),
-                    ],
-                    [
-                      "Flight",
-                      selectedCandidate.flight_number,
-                    ],
-                    [
-                      "Departure",
-                      selectedCandidate.departure_airport,
-                    ],
-                    [
-                      "Arrival",
-                      selectedCandidate.arrival_airport,
-                    ],
-                  ]}
-                />
-
-                <InfoBlock
-                  title="Payment"
-                  items={[
-                    [
-                      "Total",
-                      formatMoney(
-                        selectedCandidate.total_amount,
-                        selectedCandidate.payment_currency ||
-                          "INR"
-                      ),
-                    ],
-                    [
-                      "Paid",
-                      formatMoney(
-                        selectedCandidate.amount_paid,
-                        selectedCandidate.payment_currency ||
-                          "INR"
-                      ),
-                    ],
-                    [
-                      "Balance",
-                      formatMoney(
-                        selectedCandidate.balance_amount,
-                        selectedCandidate.payment_currency ||
-                          "INR"
-                      ),
-                    ],
-                    [
-                      "Last Payment",
-                      formatDate(
-                        selectedCandidate.last_payment_date
-                      ),
-                    ],
-                    [
-                      "Method",
-                      selectedCandidate.payment_method,
-                    ],
-                  ]}
-                />
-
-                <InfoBlock
-                  title="Address"
-                  items={[
-                    [
-                      "Address",
-                      selectedCandidate.address,
-                    ],
-                    [
-                      "City",
-                      selectedCandidate.city,
-                    ],
-                    [
-                      "State",
-                      selectedCandidate.state,
-                    ],
-                  ]}
-                />
-
-              </div>
-
+                return (
+                  <button
+                    key={String(field.key)}
+                    type="button"
+                    disabled={!file}
+                    onClick={() => void openDocument(file, field.label)}
+                    className="flex items-center justify-between rounded-2xl border border-slate-200 p-4 text-left hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <div className="flex min-w-0 items-center gap-3">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
+                        <FileText size={18} />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-bold text-slate-800">
+                          {field.label}
+                        </p>
+                        <p className="mt-0.5 text-xs text-slate-400">
+                          {file ? "Uploaded" : "Not uploaded"}
+                        </p>
+                      </div>
+                    </div>
+                    {file && (
+                      <span className="text-xs font-bold text-indigo-600">
+                        Open
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
             </div>
-
-          </ModalOverlay>
-        )}
-
-      {/* DOCUMENTS MODAL */}
-      {popup === "documents" &&
-        selectedCandidate && (
-          <ModalOverlay onClose={closePopup}>
-
-            <div className="mx-auto w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl">
-
-              <div className="mb-5 flex items-start justify-between">
-
-                <div>
-                  <h2 className="text-lg font-bold">
-                    Documents
-                  </h2>
-
-                  <p className="text-sm text-slate-500">
-                    {selectedCandidate.full_name}
-                  </p>
-                </div>
-
-                <button
-                  onClick={closePopup}
-                  className="rounded-lg p-2 hover:bg-slate-100"
-                >
-                  <X size={18} />
-                </button>
-
-              </div>
-
-              <div className="space-y-2">
-
-                <DocumentButton
-                  label="Passport"
-                  file={
-                    selectedCandidate.passport_file
-                  }
-                  onClick={() =>
-                    openDocument(
-                      selectedCandidate.passport_file,
-                      "Passport"
-                    )
-                  }
-                />
-
-                <DocumentButton
-                  label="Photo"
-                  file={
-                    selectedCandidate.photo_file
-                  }
-                  onClick={() =>
-                    openDocument(
-                      selectedCandidate.photo_file,
-                      "Photo"
-                    )
-                  }
-                />
-
-                <DocumentButton
-                  label="CV / Resume"
-                  file={selectedCandidate.cv_file}
-                  onClick={() =>
-                    openDocument(
-                      selectedCandidate.cv_file,
-                      "CV"
-                    )
-                  }
-                />
-
-                <DocumentButton
-                  label="Offer Letter"
-                  file={
-                    selectedCandidate.offer_letter_file
-                  }
-                  onClick={() =>
-                    openDocument(
-                      selectedCandidate.offer_letter_file,
-                      "Offer Letter"
-                    )
-                  }
-                />
-
-                <DocumentButton
-                  label="Employment Contract"
-                  file={
-                    selectedCandidate.contract_file
-                  }
-                  onClick={() =>
-                    openDocument(
-                      selectedCandidate.contract_file,
-                      "Contract"
-                    )
-                  }
-                />
-
-                <DocumentButton
-                  label="Invitation Letter"
-                  file={
-                    selectedCandidate.invitation_file
-                  }
-                  onClick={() =>
-                    openDocument(
-                      selectedCandidate.invitation_file,
-                      "Invitation Letter"
-                    )
-                  }
-                />
-
-                <DocumentButton
-                  label="Visa"
-                  file={selectedCandidate.visa_file}
-                  onClick={() =>
-                    openDocument(
-                      selectedCandidate.visa_file,
-                      "Visa"
-                    )
-                  }
-                />
-
-                <DocumentButton
-                  label="Flight Ticket"
-                  file={
-                    selectedCandidate.ticket_file
-                  }
-                  onClick={() =>
-                    openDocument(
-                      selectedCandidate.ticket_file,
-                      "Flight Ticket"
-                    )
-                  }
-                />
-
-                <DocumentButton
-                  label="Medical"
-                  file={
-                    selectedCandidate.medical_file
-                  }
-                  onClick={() =>
-                    openDocument(
-                      selectedCandidate.medical_file,
-                      "Medical"
-                    )
-                  }
-                />
-
-                <DocumentButton
-                  label="Insurance"
-                  file={
-                    selectedCandidate.insurance_file
-                  }
-                  onClick={() =>
-                    openDocument(
-                      selectedCandidate.insurance_file,
-                      "Insurance"
-                    )
-                  }
-                />
-
-                <DocumentButton
-                  label="Other Document"
-                  file={
-                    selectedCandidate.other_file
-                  }
-                  onClick={() =>
-                    openDocument(
-                      selectedCandidate.other_file,
-                      "Other Document"
-                    )
-                  }
-                />
-
-              </div>
-
-            </div>
-
-          </ModalOverlay>
-        )}
-
-    </main>
-  );
-}
-
-/* ================= COMPONENTS ================= */
-
-function CompanyInfo({
-  icon,
-  label,
-  title,
-  description,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  title: string;
-  description?: string;
-}) {
-  return (
-    <div className="border-b border-white/15 px-6 py-7 md:border-r lg:border-b-0 last:border-r-0">
-      <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-xl bg-white/10">
-        {icon}
-      </div>
-
-      <p className="text-xs font-medium tracking-wide text-white/75">
-        {label}
-      </p>
-
-      <p className="mt-2 text-base font-bold leading-6 text-white">
-        {title}
-      </p>
-
-      {description && (
-        <p className="mt-3 text-sm leading-6 text-white/80">
-          {description}
-        </p>
+          </div>
+        </ModalOverlay>
       )}
-    </div>
+
+      {editCandidate && (
+        <ModalOverlay onClose={closeEdit}>
+          <div className="mx-auto flex max-h-[94vh] w-full max-w-4xl flex-col overflow-hidden rounded-3xl bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 sm:px-6">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wider text-indigo-600">
+                  Edit Candidate
+                </p>
+                <h2 className="mt-1 text-lg font-bold text-slate-950">
+                  {editCandidate.full_name}
+                </h2>
+              </div>
+
+              <button
+                type="button"
+                onClick={closeEdit}
+                disabled={editSaving}
+                className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 disabled:opacity-50"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="overflow-y-auto p-5 sm:p-6">
+              {editError && (
+                <div className="mb-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  {editError}
+                </div>
+              )}
+
+              <div className="grid gap-5 lg:grid-cols-2">
+                <EditSection title="Personal Information" icon={<UserRound size={17} />}>
+                  <EditInput label="Full Name" value={editCandidate.full_name} onChange={(value) => setEditCandidate({ ...editCandidate, full_name: value })} />
+                  <EditInput label="Father Name" value={editCandidate.father_name || ""} onChange={(value) => setEditCandidate({ ...editCandidate, father_name: value })} />
+                  <EditInput label="Mobile" value={editCandidate.mobile || ""} onChange={(value) => setEditCandidate({ ...editCandidate, mobile: value })} />
+                  <EditInput label="WhatsApp" value={editCandidate.whatsapp || ""} onChange={(value) => setEditCandidate({ ...editCandidate, whatsapp: value })} />
+                  <EditInput label="Email" value={editCandidate.email || ""} onChange={(value) => setEditCandidate({ ...editCandidate, email: value })} />
+                  <EditInput label="City" value={editCandidate.city || ""} onChange={(value) => setEditCandidate({ ...editCandidate, city: value })} />
+                  <EditInput label="State" value={editCandidate.state || ""} onChange={(value) => setEditCandidate({ ...editCandidate, state: value })} />
+                </EditSection>
+
+                <EditSection title="Job Information" icon={<BriefcaseBusiness size={17} />}>
+                  <EditInput label="Country" value={editCandidate.country || ""} onChange={(value) => setEditCandidate({ ...editCandidate, country: value })} />
+                  <EditInput label="Job Position" value={editCandidate.job_position || ""} onChange={(value) => setEditCandidate({ ...editCandidate, job_position: value })} />
+                  <EditInput label="Employer" value={editCandidate.employer_name || ""} onChange={(value) => setEditCandidate({ ...editCandidate, employer_name: value })} />
+                  <EditInput label="Job Location" value={editCandidate.job_location || ""} onChange={(value) => setEditCandidate({ ...editCandidate, job_location: value })} />
+                  <EditInput label="Salary" type="number" value={editCandidate.salary?.toString() || ""} onChange={(value) => setEditCandidate({ ...editCandidate, salary: value ? Number(value) : null })} />
+                  <EditInput label="Contract Duration" value={editCandidate.contract_duration || ""} onChange={(value) => setEditCandidate({ ...editCandidate, contract_duration: value })} />
+                  <EditSelect label="Status" value={editCandidate.status || "New Lead"} options={statuses} onChange={(value) => setEditCandidate({ ...editCandidate, status: value })} />
+                </EditSection>
+
+                <EditSection title="Passport & Visa" icon={<FileText size={17} />}>
+                  <EditInput label="Passport Number" value={editCandidate.passport_number || ""} onChange={(value) => setEditCandidate({ ...editCandidate, passport_number: value })} />
+                  <EditInput label="Passport Expiry" type="date" value={editCandidate.passport_expiry || ""} onChange={(value) => setEditCandidate({ ...editCandidate, passport_expiry: value })} />
+                  <EditInput label="Visa Type" value={editCandidate.visa_type || ""} onChange={(value) => setEditCandidate({ ...editCandidate, visa_type: value })} />
+                  <EditInput label="Visa Number" value={editCandidate.visa_number || ""} onChange={(value) => setEditCandidate({ ...editCandidate, visa_number: value })} />
+                  <EditInput label="Visa Valid Till" type="date" value={editCandidate.visa_valid_till || ""} onChange={(value) => setEditCandidate({ ...editCandidate, visa_valid_till: value })} />
+                </EditSection>
+
+                <EditSection title="Travel" icon={<Plane size={17} />}>
+                  <EditInput label="Going Date" type="date" value={editCandidate.going_date || ""} onChange={(value) => setEditCandidate({ ...editCandidate, going_date: value })} />
+                  <EditInput label="Return Date" type="date" value={editCandidate.return_date || ""} onChange={(value) => setEditCandidate({ ...editCandidate, return_date: value })} />
+                  <EditInput label="Flight Number" value={editCandidate.flight_number || ""} onChange={(value) => setEditCandidate({ ...editCandidate, flight_number: value })} />
+                  <EditInput label="Departure Airport" value={editCandidate.departure_airport || ""} onChange={(value) => setEditCandidate({ ...editCandidate, departure_airport: value })} />
+                  <EditInput label="Arrival Airport" value={editCandidate.arrival_airport || ""} onChange={(value) => setEditCandidate({ ...editCandidate, arrival_airport: value })} />
+                </EditSection>
+
+                <EditSection title="Service Fee & Payment" icon={<Wallet size={17} />}>
+                  <EditInput
+                    label="Service Fee"
+                    type="number"
+                    value={editCandidate.registration_fee?.toString() || ""}
+                    onChange={(value) => {
+                      const fee = value ? Number(value) : 0;
+                      const rate = Number(editCandidate.exchange_rate_to_inr ?? 0);
+                      setEditCandidate({
+                        ...editCandidate,
+                        registration_fee: fee,
+                        total_amount: fee,
+                        service_fee_inr: rate > 0 ? fee * rate : null,
+                        total_amount_inr: rate > 0 ? fee * rate : null,
+                      });
+                    }}
+                  />
+
+                  <EditSelect
+                    label="Currency"
+                    value={editCandidate.payment_currency || "INR"}
+                    options={["USD", "EUR", "RUB", "GBP", "AED", "SAR", "CAD", "AUD", "INR"]}
+                    onChange={(value) =>
+                      setEditCandidate({
+                        ...editCandidate,
+                        payment_currency: value,
+                      })
+                    }
+                  />
+
+                  <EditInput
+                    label="Amount Paid"
+                    type="number"
+                    value={editCandidate.amount_paid?.toString() || ""}
+                    onChange={(value) =>
+                      setEditCandidate({
+                        ...editCandidate,
+                        amount_paid: value ? Number(value) : 0,
+                      })
+                    }
+                  />
+
+                  <EditInput
+                    label="Last Payment Date"
+                    type="date"
+                    value={editCandidate.last_payment_date || ""}
+                    onChange={(value) =>
+                      setEditCandidate({ ...editCandidate, last_payment_date: value })
+                    }
+                  />
+
+                  <EditInput
+                    label="Payment Method"
+                    value={editCandidate.payment_method || ""}
+                    onChange={(value) =>
+                      setEditCandidate({ ...editCandidate, payment_method: value })
+                    }
+                  />
+
+                  <div className="rounded-xl border border-indigo-100 bg-indigo-50 p-4 sm:col-span-2">
+                    <p className="text-xs font-bold uppercase tracking-wide text-indigo-700">
+                      Automatic INR Conversion
+                    </p>
+                    <p className="mt-1 text-xs text-slate-600">
+                      {editRateLoading
+                        ? "Fetching exchange rate..."
+                        : `1 ${editCandidate.payment_currency || "INR"} = ₹ ${Number(editCandidate.exchange_rate_to_inr || 0).toLocaleString("en-IN", { maximumFractionDigits: 4 })}`}
+                    </p>
+
+                    <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                      <div className="rounded-xl bg-white p-3">
+                        <p className="text-[10px] font-bold uppercase text-slate-400">
+                          Service Fee INR
+                        </p>
+                        <p className="mt-1 text-sm font-bold text-slate-900">
+                          ₹ {Number(editCandidate.service_fee_inr || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 })}
+                        </p>
+                      </div>
+                      <div className="rounded-xl bg-white p-3">
+                        <p className="text-[10px] font-bold uppercase text-slate-400">
+                          Paid INR
+                        </p>
+                        <p className="mt-1 text-sm font-bold text-slate-900">
+                          ₹ {(Number(editCandidate.amount_paid || 0) * Number(editCandidate.exchange_rate_to_inr || 0)).toLocaleString("en-IN", { maximumFractionDigits: 2 })}
+                        </p>
+                      </div>
+                      <div className="rounded-xl bg-white p-3">
+                        <p className="text-[10px] font-bold uppercase text-slate-400">
+                          Balance INR
+                        </p>
+                        <p className="mt-1 text-sm font-bold text-slate-900">
+                          ₹ {(Math.max(0, Number(editCandidate.registration_fee || 0) - Number(editCandidate.amount_paid || 0)) * Number(editCandidate.exchange_rate_to_inr || 0)).toLocaleString("en-IN", { maximumFractionDigits: 2 })}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </EditSection>
+
+                <EditSection title="Documents" icon={<FileText size={17} />}>
+                  <div className="sm:col-span-2">
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="min-w-0">
+                          <p className="text-sm font-bold text-slate-800">
+                            {editDocumentFile
+                              ? "New document selected"
+                              : editCandidate.other_file
+                                ? "Current document uploaded"
+                                : "No document uploaded"}
+                          </p>
+                          <p className="mt-1 text-xs leading-5 text-slate-500">
+                            Keep all candidate documents in one PDF. Maximum 20 MB.
+                          </p>
+                        </div>
+
+                        <label className="inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-xs font-bold text-white hover:bg-indigo-700">
+                          <FileText size={15} />
+                          {editDocumentFile
+                            ? "Choose Different PDF"
+                            : editCandidate.other_file
+                              ? "Replace Document"
+                              : "Upload Document"}
+                          <input
+                            type="file"
+                            accept="application/pdf,.pdf"
+                            onChange={handleEditDocument}
+                            className="hidden"
+                          />
+                        </label>
+                      </div>
+
+                      {editDocumentFile && (
+                        <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5">
+                          <div className="min-w-0">
+                            <p className="truncate text-xs font-bold text-emerald-800">
+                              {editDocumentFile.name}
+                            </p>
+                            <p className="mt-0.5 text-[11px] text-emerald-700">
+                              {(editDocumentFile.size / 1024 / 1024).toFixed(2)} MB • PDF
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setEditDocumentFile(null)}
+                            className="shrink-0 rounded-lg border border-red-200 bg-white px-2.5 py-1.5 text-[11px] font-bold text-red-600 hover:bg-red-50"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      )}
+
+                      {editCandidate.other_file && !editDocumentFile && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            void openDocument(editCandidate.other_file, "Candidate Documents")
+                          }
+                          className="mt-3 text-xs font-bold text-indigo-600 hover:text-indigo-700"
+                        >
+                          Open current document
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </EditSection>
+              </div>
+            </div>
+
+            <div className="flex flex-col-reverse gap-3 border-t border-slate-200 bg-slate-50 px-5 py-4 sm:flex-row sm:justify-end sm:px-6">
+              <button
+                type="button"
+                onClick={closeEdit}
+                disabled={editSaving}
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-5 text-sm font-bold text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+              >
+                <X size={16} />
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                onClick={() => void saveEdit()}
+                disabled={editSaving}
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-indigo-600 px-5 text-sm font-bold text-white hover:bg-indigo-700 disabled:opacity-60"
+              >
+                {editSaving ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin" />
+                    Updating...
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 size={16} />
+                    Update Candidate
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </ModalOverlay>
+      )}
+    </main>
   );
 }
 
@@ -1505,73 +1345,161 @@ function StatCard({
   icon: React.ReactNode;
 }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-
+    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
       <div className="flex items-start justify-between">
-
         <div>
-          <p className="text-xs text-slate-500">
-            {title}
-          </p>
-
-          <p className="mt-2 text-2xl font-bold">
-            {value}
-          </p>
+          <p className="text-xs font-medium text-slate-500">{title}</p>
+          <p className="mt-2 text-2xl font-bold text-slate-950">{value}</p>
         </div>
-
-        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 text-slate-700">
+        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
           {icon}
         </div>
-
       </div>
-
     </div>
   );
 }
 
-function StatusBadge({
-  status,
-}: {
-  status: string;
-}) {
-  let className =
-    "rounded-full px-3 py-1 text-xs font-medium bg-slate-100 text-slate-600";
-
-  if (
-    status === "Visa Approved" ||
-    status === "Ticket Booked"
-  ) {
-    className =
-      "rounded-full px-3 py-1 text-xs font-medium bg-blue-50 text-blue-700";
-  }
+function StatusBadge({ status }: { status: string }) {
+  let classes = "bg-slate-100 text-slate-600";
 
   if (
     status === "Visa Processing" ||
     status === "Offer Letter" ||
     status === "Contract Signed"
   ) {
-    className =
-      "rounded-full px-3 py-1 text-xs font-medium bg-amber-50 text-amber-700";
-  }
-
-  if (
+    classes = "bg-amber-50 text-amber-700";
+  } else if (
+    status === "Visa Approved" ||
+    status === "Ticket Booked"
+  ) {
+    classes = "bg-blue-50 text-blue-700";
+  } else if (
     status === "Travelled" ||
     status === "Working in Russia" ||
     status === "Completed"
   ) {
-    className =
-      "rounded-full px-3 py-1 text-xs font-medium bg-green-50 text-green-700";
-  }
-
-  if (status === "Rejected") {
-    className =
-      "rounded-full px-3 py-1 text-xs font-medium bg-red-50 text-red-700";
+    classes = "bg-emerald-50 text-emerald-700";
+  } else if (status === "Rejected") {
+    classes = "bg-red-50 text-red-700";
   }
 
   return (
-    <span className={className}>
+    <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${classes}`}>
       {status}
     </span>
+  );
+}
+
+function InfoCard({
+  title,
+  icon,
+  items,
+}: {
+  title: string;
+  icon: React.ReactNode;
+  items: Array<[string, string | null | undefined]>;
+}) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+      <div className="mb-3 flex items-center gap-2">
+        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600">
+          {icon}
+        </div>
+        <h3 className="text-sm font-bold text-slate-900">{title}</h3>
+      </div>
+
+      <div className="space-y-2">
+        {items.map(([label, value]) => (
+          <div
+            key={label}
+            className="flex items-start justify-between gap-3 border-b border-slate-100 pb-2 last:border-0 last:pb-0"
+          >
+            <span className="text-xs text-slate-400">{label}</span>
+            <span className="max-w-[62%] text-right text-xs font-semibold text-slate-700">
+              {value || "—"}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function EditSection({
+  title,
+  icon,
+  children,
+}: {
+  title: string;
+  icon: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="rounded-2xl border border-slate-200 p-4">
+      <div className="mb-4 flex items-center gap-2">
+        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600">
+          {icon}
+        </div>
+        <h3 className="text-sm font-bold text-slate-900">{title}</h3>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">{children}</div>
+    </section>
+  );
+}
+
+function EditInput({
+  label,
+  value,
+  onChange,
+  type = "text",
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  type?: string;
+}) {
+  return (
+    <label className="block">
+      <span className="mb-1.5 block text-xs font-bold text-slate-600">
+        {label}
+      </span>
+      <input
+        type={type}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10"
+      />
+    </label>
+  );
+}
+
+function EditSelect({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: string[];
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="block">
+      <span className="mb-1.5 block text-xs font-bold text-slate-600">
+        {label}
+      </span>
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10"
+      >
+        {options.map((option) => (
+          <option key={option}>{option}</option>
+        ))}
+      </select>
+    </label>
   );
 }
 
@@ -1585,124 +1513,11 @@ function ModalOverlay({
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-950/50 p-4 backdrop-blur-sm"
-      onClick={onClose}
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
     >
-      <div
-        className="my-auto w-full"
-        onClick={(e) =>
-          e.stopPropagation()
-        }
-      >
-        {children}
-      </div>
-    </div>
-  );
-}
-
-function ActionButton({
-  icon,
-  label,
-  onClick,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-sm font-medium hover:bg-slate-50"
-    >
-      {icon}
-      {label}
-    </button>
-  );
-}
-
-function DocumentButton({
-  label,
-  file,
-  onClick,
-}: {
-  label: string;
-  file: string | null;
-  onClick: () => void;
-}) {
-  const uploaded = Boolean(file);
-
-  return (
-    <button
-      onClick={onClick}
-      disabled={!uploaded}
-      className="flex w-full items-center justify-between rounded-xl border border-slate-200 px-4 py-3 text-left hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-    >
-      <div className="flex items-center gap-3">
-
-        <FileText
-          size={18}
-          className="text-slate-500"
-        />
-
-        <span className="text-sm font-medium">
-          {label}
-        </span>
-
-      </div>
-
-      <span
-        className={`text-xs font-medium ${
-          uploaded
-            ? "text-green-600"
-            : "text-slate-400"
-        }`}
-      >
-        {uploaded
-          ? "View"
-          : "Not Uploaded"}
-      </span>
-
-    </button>
-  );
-}
-
-function InfoBlock({
-  title,
-  items,
-}: {
-  title: string;
-  items: [
-    string,
-    string | null | undefined
-  ][];
-}) {
-  return (
-    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-
-      <h3 className="mb-3 text-sm font-bold">
-        {title}
-      </h3>
-
-      <div className="space-y-2">
-
-        {items.map(([label, value]) => (
-          <div
-            key={label}
-            className="flex justify-between gap-4 border-b border-slate-200 pb-2 last:border-0"
-          >
-
-            <span className="text-xs text-slate-500">
-              {label}
-            </span>
-
-            <span className="max-w-[60%] text-right text-xs font-medium text-slate-800">
-              {value || "—"}
-            </span>
-
-          </div>
-        ))}
-
-      </div>
-
+      <div className="my-auto w-full">{children}</div>
     </div>
   );
 }
