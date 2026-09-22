@@ -102,7 +102,7 @@ export default function LoginPage() {
             {/* Horizontal Company Logo */}
             <div className="flex items-center">
               <img
-                src="/logo.png"
+                src="/vertical-logo.png"
                 alt="World Global Manpower Pvt. Ltd."
                 className="h-auto w-[210px] object-contain"
               />
@@ -184,11 +184,7 @@ export default function LoginPage() {
               ========================== */}
               <div className="mb-7 flex justify-center">
                 <div className="flex h-36 w-full items-center justify-center">
-                  <img
-                    src="/vertical-logo.png"
-                    alt="World Global Manpower Pvt. Ltd."
-                    className="h-32 w-auto max-w-[210px] object-contain"
-                  />
+
                 </div>
               </div>
 
