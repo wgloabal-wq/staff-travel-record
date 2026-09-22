@@ -1,4 +1,4 @@
- "use client";
+"use client";
 
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -80,7 +80,7 @@ export default function LoginPage() {
     return (
       <main className="flex min-h-screen items-center justify-center bg-slate-950">
         <div className="flex items-center gap-3 text-sm font-medium text-slate-300">
-          <Loader2 className="h-5 w-5 animate-spin" />
+          <Loader2 className="h-5 w-5 animate-spin text-blue-400" />
           Checking secure session...
         </div>
       </main>
@@ -90,112 +90,170 @@ export default function LoginPage() {
   return (
     <main className="min-h-screen bg-slate-950">
       <div className="grid min-h-screen lg:grid-cols-[1.05fr_0.95fr]">
-        <section className="hidden bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 p-10 text-white lg:flex lg:flex-col lg:justify-between">
-          <div>
-            <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-600">
-                <ShieldCheck className="h-6 w-6" />
-              </div>
-              <div>
-                <p className="text-sm font-bold tracking-wide">
-                  WORLD GLOBAL
-                </p>
-                <p className="text-[10px] font-semibold tracking-[0.2em] text-slate-400">
-                  MANPOWER PVT. LTD.
-                </p>
-              </div>
+        {/* LEFT SIDE */}
+        <section className="relative hidden overflow-hidden bg-gradient-to-br from-[#06142f] via-[#0a1d42] to-[#092d67] p-8 text-white lg:flex lg:flex-col lg:justify-between xl:p-12">
+          {/* Background decoration */}
+          <div className="pointer-events-none absolute -right-40 top-20 h-96 w-96 rounded-full bg-blue-500/10 blur-3xl" />
+          <div className="pointer-events-none absolute -left-40 bottom-0 h-96 w-96 rounded-full bg-cyan-400/10 blur-3xl" />
+
+          <div className="relative z-10">
+            {/* Company Logo */}
+            <div className="flex items-center">
+              <img
+                src="/logo.png"
+                alt="World Global Manpower Pvt. Ltd."
+                className="h-auto w-[210px] object-contain"
+              />
             </div>
 
-            <div className="mt-24 max-w-xl">
-              <p className="text-sm font-semibold uppercase tracking-[0.2em] text-blue-400">
-                Recruitment Management
-              </p>
-              <h1 className="mt-4 text-5xl font-bold leading-tight">
-                Manage staff travel and overseas candidates from one secure
-                workspace.
+            {/* Hero */}
+            <div className="mt-24 max-w-2xl xl:mt-28">
+              <div className="mb-5 inline-flex items-center rounded-full border border-blue-400/20 bg-blue-400/10 px-4 py-2">
+                <span className="text-xs font-bold uppercase tracking-[0.22em] text-blue-300">
+                  Recruitment Management
+                </span>
+              </div>
+
+              <h1 className="text-4xl font-extrabold leading-[1.08] tracking-tight text-white xl:text-5xl">
+                Manage staff travel and overseas candidates from one{" "}
+                <span className="text-blue-400">secure workspace.</span>
               </h1>
-              <p className="mt-6 max-w-lg text-base leading-7 text-slate-400">
-                Access candidate records, travel information, documents and
-                recruitment operations through your company dashboard.
+
+              <p className="mt-6 max-w-xl text-base leading-7 text-slate-300">
+                Access candidate records, staff travel information, documents,
+                payments and recruitment operations through your company
+                dashboard.
               </p>
+
+              {/* Features */}
+              <div className="mt-10 grid max-w-xl grid-cols-2 gap-4">
+                <div className="rounded-2xl border border-white/10 bg-white/[0.05] p-4 backdrop-blur-sm">
+                  <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-blue-500/15 text-blue-300">
+                    <ShieldCheck className="h-5 w-5" />
+                  </div>
+                  <p className="text-sm font-bold text-white">
+                    Secure Access
+                  </p>
+                  <p className="mt-1 text-xs leading-5 text-slate-400">
+                    Authorized staff only
+                  </p>
+                </div>
+
+                <div className="rounded-2xl border border-white/10 bg-white/[0.05] p-4 backdrop-blur-sm">
+                  <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-blue-500/15 text-blue-300">
+                    <LockKeyhole className="h-5 w-5" />
+                  </div>
+                  <p className="text-sm font-bold text-white">
+                    Centralized Records
+                  </p>
+                  <p className="mt-1 text-xs leading-5 text-slate-400">
+                    Staff & candidate management
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
 
-          <p className="text-xs text-slate-500">
-            Authorized staff only • World Global Manpower Pvt. Ltd.
-          </p>
+          {/* Footer */}
+          <div className="relative z-10 flex items-center justify-between border-t border-white/10 pt-5">
+            <p className="text-xs font-medium text-slate-400">
+              Authorized staff only
+            </p>
+
+            <p className="text-xs text-slate-500">
+              © {new Date().getFullYear()} World Global Manpower Pvt. Ltd.
+            </p>
+          </div>
         </section>
 
-        <section className="flex items-center justify-center bg-slate-50 px-4 py-8 sm:px-6">
+        {/* RIGHT SIDE */}
+        <section className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-8 sm:px-6 lg:px-10">
           <div className="w-full max-w-md">
-            <div className="mb-8 lg:hidden">
-              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-600 text-white shadow-lg">
-                <ShieldCheck className="h-7 w-7" />
-              </div>
-              <h1 className="mt-4 text-center text-xl font-bold text-slate-900">
-                World Global Manpower
-              </h1>
-              <p className="mt-1 text-center text-xs font-semibold tracking-widest text-slate-400">
-                MANPOWER PVT. LTD.
-              </p>
+            {/* Mobile Logo */}
+            <div className="mb-8 flex justify-center lg:hidden">
+              <img
+                src="/logo.png"
+                alt="World Global Manpower Pvt. Ltd."
+                className="h-auto w-[220px] object-contain"
+              />
             </div>
 
-            <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-xl sm:p-8">
+            {/* Login Card */}
+            <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_20px_60px_rgba(15,23,42,0.10)] sm:p-8">
+              {/* Header */}
               <div className="mb-7">
-                <p className="text-sm font-semibold text-blue-600">
-                  Secure Login
-                </p>
-                <h2 className="mt-1 text-2xl font-bold text-slate-900">
+                <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1.5">
+                  <span className="h-2 w-2 rounded-full bg-blue-600" />
+                  <span className="text-xs font-bold text-blue-700">
+                    Secure Login
+                  </span>
+                </div>
+
+                <h2 className="text-3xl font-extrabold tracking-tight text-slate-950">
                   Welcome back
                 </h2>
+
                 <p className="mt-2 text-sm leading-6 text-slate-500">
                   Sign in with your authorized company account to continue.
                 </p>
               </div>
 
+              {/* Error */}
               {error && (
-                <div className="mb-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                <div className="mb-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium leading-5 text-red-700">
                   {error}
                 </div>
               )}
 
+              {/* Form */}
               <form onSubmit={handleSubmit} className="space-y-5">
+                {/* Email */}
                 <label className="block">
-                  <span className="mb-1.5 block text-sm font-semibold text-slate-700">
-                    Email
+                  <span className="mb-2 block text-sm font-bold text-slate-800">
+                    Email address
                   </span>
+
                   <div className="relative">
                     <Mail className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+
                     <input
                       type="email"
                       autoComplete="email"
                       value={email}
                       onChange={(event) => setEmail(event.target.value)}
                       placeholder="admin@company.com"
-                      className="h-12 w-full rounded-xl border border-slate-200 bg-white pl-10 pr-4 text-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-50"
+                      className="h-12 w-full rounded-xl border border-slate-300 bg-white pl-10 pr-4 text-sm font-medium text-slate-900 placeholder:text-slate-400 outline-none transition-all focus:border-blue-600 focus:ring-4 focus:ring-blue-100"
                     />
                   </div>
                 </label>
 
+                {/* Password */}
                 <label className="block">
-                  <span className="mb-1.5 block text-sm font-semibold text-slate-700">
-                    Password
-                  </span>
+                  <div className="mb-2 flex items-center justify-between">
+                    <span className="text-sm font-bold text-slate-800">
+                      Password
+                    </span>
+                  </div>
+
                   <div className="relative">
                     <LockKeyhole className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+
                     <input
                       type={showPassword ? "text" : "password"}
                       autoComplete="current-password"
                       value={password}
                       onChange={(event) => setPassword(event.target.value)}
                       placeholder="Enter your password"
-                      className="h-12 w-full rounded-xl border border-slate-200 bg-white pl-10 pr-11 text-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-50"
+                      className="h-12 w-full rounded-xl border border-slate-300 bg-white pl-10 pr-11 text-sm font-medium text-slate-900 placeholder:text-slate-400 outline-none transition-all focus:border-blue-600 focus:ring-4 focus:ring-blue-100"
                     />
+
                     <button
                       type="button"
                       onClick={() => setShowPassword((value) => !value)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                      aria-label={showPassword ? "Hide password" : "Show password"}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+                      aria-label={
+                        showPassword ? "Hide password" : "Show password"
+                      }
                     >
                       {showPassword ? (
                         <EyeOff className="h-4 w-4" />
@@ -206,10 +264,11 @@ export default function LoginPage() {
                   </div>
                 </label>
 
+                {/* Sign In */}
                 <button
                   type="submit"
                   disabled={loading}
-                  className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 text-sm font-bold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 text-sm font-bold text-white shadow-lg shadow-blue-600/20 transition-all hover:bg-blue-700 hover:shadow-blue-600/30 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {loading ? (
                     <>
@@ -225,11 +284,29 @@ export default function LoginPage() {
                 </button>
               </form>
 
-              <div className="mt-6 rounded-xl bg-slate-50 px-4 py-3 text-xs leading-5 text-slate-500">
-                This system is restricted to authorized World Global Manpower
-                staff.
+              {/* Security Notice */}
+              <div className="mt-6 flex items-start gap-3 rounded-2xl border border-blue-100 bg-blue-50/70 px-4 py-4">
+                <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white">
+                  <ShieldCheck className="h-4 w-4" />
+                </div>
+
+                <div>
+                  <p className="text-xs font-bold text-slate-800">
+                    Authorized access only
+                  </p>
+
+                  <p className="mt-1 text-xs leading-5 text-slate-500">
+                    This system is restricted to authorized World Global
+                    Manpower staff.
+                  </p>
+                </div>
               </div>
             </div>
+
+            {/* Mobile Footer */}
+            <p className="mt-6 text-center text-xs text-slate-400 lg:hidden">
+              © {new Date().getFullYear()} World Global Manpower Pvt. Ltd.
+            </p>
           </div>
         </section>
       </div>
