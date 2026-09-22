@@ -179,14 +179,8 @@ export default function LoginPage() {
           <div className="w-full max-w-md">
             {/* Login Card */}
             <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_20px_60px_rgba(15,23,42,0.10)] sm:p-8">
-              {/* =========================
-                  VERTICAL COMPANY LOGO
-              ========================== */}
-              <div className="mb-7 flex justify-center">
-                <div className="flex h-36 w-full items-center justify-center">
 
-                </div>
-              </div>
+
 
               {/* Login Header */}
               <div className="mb-7">
