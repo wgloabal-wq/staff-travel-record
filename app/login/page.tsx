@@ -90,14 +90,16 @@ export default function LoginPage() {
   return (
     <main className="min-h-screen bg-slate-950">
       <div className="grid min-h-screen lg:grid-cols-[1.05fr_0.95fr]">
-        {/* LEFT SIDE */}
-        <section className="relative hidden overflow-hidden bg-gradient-to-br from-[#06142f] via-[#0a1d42] to-[#092d67] p-8 text-white lg:flex lg:flex-col lg:justify-between xl:p-12">
-          {/* Background decoration */}
+        {/* =========================
+            LEFT SIDE - DESKTOP
+        ========================== */}
+        <section className="relative hidden min-h-screen overflow-hidden bg-gradient-to-br from-[#06142f] via-[#0a1d42] to-[#092d67] p-8 text-white lg:flex lg:flex-col lg:justify-between xl:p-12">
+          {/* Background glow */}
           <div className="pointer-events-none absolute -right-40 top-20 h-96 w-96 rounded-full bg-blue-500/10 blur-3xl" />
           <div className="pointer-events-none absolute -left-40 bottom-0 h-96 w-96 rounded-full bg-cyan-400/10 blur-3xl" />
 
           <div className="relative z-10">
-            {/* Company Logo */}
+            {/* Horizontal Company Logo */}
             <div className="flex items-center">
               <img
                 src="/logo.png"
@@ -106,8 +108,8 @@ export default function LoginPage() {
               />
             </div>
 
-            {/* Hero */}
-            <div className="mt-24 max-w-2xl xl:mt-28">
+            {/* Hero Content */}
+            <div className="mt-20 max-w-2xl xl:mt-24">
               <div className="mb-5 inline-flex items-center rounded-full border border-blue-400/20 bg-blue-400/10 px-4 py-2">
                 <span className="text-xs font-bold uppercase tracking-[0.22em] text-blue-300">
                   Recruitment Management
@@ -125,15 +127,17 @@ export default function LoginPage() {
                 dashboard.
               </p>
 
-              {/* Features */}
+              {/* Feature Cards */}
               <div className="mt-10 grid max-w-xl grid-cols-2 gap-4">
                 <div className="rounded-2xl border border-white/10 bg-white/[0.05] p-4 backdrop-blur-sm">
                   <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-blue-500/15 text-blue-300">
                     <ShieldCheck className="h-5 w-5" />
                   </div>
+
                   <p className="text-sm font-bold text-white">
                     Secure Access
                   </p>
+
                   <p className="mt-1 text-xs leading-5 text-slate-400">
                     Authorized staff only
                   </p>
@@ -143,9 +147,11 @@ export default function LoginPage() {
                   <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-blue-500/15 text-blue-300">
                     <LockKeyhole className="h-5 w-5" />
                   </div>
+
                   <p className="text-sm font-bold text-white">
                     Centralized Records
                   </p>
+
                   <p className="mt-1 text-xs leading-5 text-slate-400">
                     Staff & candidate management
                   </p>
@@ -154,7 +160,7 @@ export default function LoginPage() {
             </div>
           </div>
 
-          {/* Footer */}
+          {/* Desktop Footer */}
           <div className="relative z-10 flex items-center justify-between border-t border-white/10 pt-5">
             <p className="text-xs font-medium text-slate-400">
               Authorized staff only
@@ -166,24 +172,31 @@ export default function LoginPage() {
           </div>
         </section>
 
-        {/* RIGHT SIDE */}
+        {/* =========================
+            RIGHT SIDE
+        ========================== */}
         <section className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-8 sm:px-6 lg:px-10">
           <div className="w-full max-w-md">
-            {/* Mobile Logo */}
-            <div className="mb-8 flex justify-center lg:hidden">
-              <img
-                src="/logo.png"
-                alt="World Global Manpower Pvt. Ltd."
-                className="h-auto w-[220px] object-contain"
-              />
-            </div>
-
             {/* Login Card */}
             <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_20px_60px_rgba(15,23,42,0.10)] sm:p-8">
-              {/* Header */}
+              {/* =========================
+                  VERTICAL COMPANY LOGO
+              ========================== */}
+              <div className="mb-7 flex justify-center">
+                <div className="flex h-36 w-full items-center justify-center">
+                  <img
+                    src="/vertical-logo.png"
+                    alt="World Global Manpower Pvt. Ltd."
+                    className="h-32 w-auto max-w-[210px] object-contain"
+                  />
+                </div>
+              </div>
+
+              {/* Login Header */}
               <div className="mb-7">
                 <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1.5">
                   <span className="h-2 w-2 rounded-full bg-blue-600" />
+
                   <span className="text-xs font-bold text-blue-700">
                     Secure Login
                   </span>
@@ -198,14 +211,16 @@ export default function LoginPage() {
                 </p>
               </div>
 
-              {/* Error */}
+              {/* Error Message */}
               {error && (
                 <div className="mb-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium leading-5 text-red-700">
                   {error}
                 </div>
               )}
 
-              {/* Form */}
+              {/* =========================
+                  LOGIN FORM
+              ========================== */}
               <form onSubmit={handleSubmit} className="space-y-5">
                 {/* Email */}
                 <label className="block">
@@ -229,11 +244,9 @@ export default function LoginPage() {
 
                 {/* Password */}
                 <label className="block">
-                  <div className="mb-2 flex items-center justify-between">
-                    <span className="text-sm font-bold text-slate-800">
-                      Password
-                    </span>
-                  </div>
+                  <span className="mb-2 block text-sm font-bold text-slate-800">
+                    Password
+                  </span>
 
                   <div className="relative">
                     <LockKeyhole className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -264,7 +277,7 @@ export default function LoginPage() {
                   </div>
                 </label>
 
-                {/* Sign In */}
+                {/* Sign In Button */}
                 <button
                   type="submit"
                   disabled={loading}
