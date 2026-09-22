@@ -99,7 +99,7 @@ export default function LoginPage() {
           <div className="pointer-events-none absolute -left-40 bottom-0 h-96 w-96 rounded-full bg-cyan-400/10 blur-3xl" />
 
           <div className="relative z-10">
-            {/* Horizontal Company Logo */}
+            {/* Company Logo */}
             <div className="flex items-center">
               <img
                 src="/vertical-logo.png"
@@ -175,15 +175,12 @@ export default function LoginPage() {
         {/* =========================
             RIGHT SIDE
         ========================== */}
-        <section className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-8 sm:px-6 lg:px-10">
+        <section className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-6 sm:px-6 lg:px-10">
           <div className="w-full max-w-md">
             {/* Login Card */}
-            <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_20px_60px_rgba(15,23,42,0.10)] sm:p-8">
-
-
-
+            <div className="rounded-3xl border border-slate-200 bg-white px-6 py-6 shadow-[0_20px_60px_rgba(15,23,42,0.10)] sm:px-7 sm:py-7">
               {/* Login Header */}
-              <div className="mb-7">
+              <div className="mb-6">
                 <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1.5">
                   <span className="h-2 w-2 rounded-full bg-blue-600" />
 
@@ -208,9 +205,7 @@ export default function LoginPage() {
                 </div>
               )}
 
-              {/* =========================
-                  LOGIN FORM
-              ========================== */}
+              {/* Login Form */}
               <form onSubmit={handleSubmit} className="space-y-5">
                 {/* Email */}
                 <label className="block">
@@ -307,7 +302,7 @@ export default function LoginPage() {
             </div>
 
             {/* Mobile Footer */}
-            <p className="mt-6 text-center text-xs text-slate-400 lg:hidden">
+            <p className="mt-5 text-center text-xs text-slate-400 lg:hidden">
               © {new Date().getFullYear()} World Global Manpower Pvt. Ltd.
             </p>
           </div>
