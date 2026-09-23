@@ -17,6 +17,7 @@ import {
   Search,
   UserRound,
   Plane,
+  Trash2,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
@@ -142,6 +143,7 @@ export default function StaffTravelRecordsPage() {
   const [editSameTicket, setEditSameTicket] = useState(false);
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState("");
+  const [deletingRecordId, setDeletingRecordId] = useState<string | null>(null);
 
   async function loadRecords(showRefresh = false) {
     try {
@@ -501,6 +503,62 @@ export default function StaffTravelRecordsPage() {
     }
   }
 
+  async function deleteTravelRecord(record: TravelRecord) {
+    const confirmed = window.confirm(
+      `Delete this travel record for ${record.staff_name}?\\n\\nThis will permanently remove the travel record and its uploaded ticket PDFs.`
+    );
+
+    if (!confirmed) return;
+
+    setDeletingRecordId(record.id);
+    setError("");
+
+    try {
+      const storagePaths = Array.from(
+        new Set(
+          [record.ticket_file, record.return_ticket_file]
+            .map(getStoragePath)
+            .filter(Boolean) as string[]
+        )
+      );
+
+      const { error: deleteError } = await supabase
+        .from("travel_records")
+        .delete()
+        .eq("id", record.id);
+
+      if (deleteError) {
+        throw new Error(deleteError.message);
+      }
+
+      if (storagePaths.length) {
+        const { error: storageError } = await supabase.storage
+          .from("travel-documents")
+          .remove(storagePaths);
+
+        if (storageError) {
+          console.warn(
+            "Travel record deleted, but ticket cleanup failed:",
+            storageError.message
+          );
+        }
+      }
+
+      setRecords((current) =>
+        current.filter((item) => item.id !== record.id)
+      );
+    } catch (err: unknown) {
+      console.error("DELETE TRAVEL RECORD FAILED:", err);
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Unable to delete travel record."
+      );
+    } finally {
+      setDeletingRecordId(null);
+    }
+  }
+
   function clearFilters() {
     setSearch("");
     setCountryFilter("All Countries");
@@ -510,9 +568,9 @@ export default function StaffTravelRecordsPage() {
     search.trim() !== "" || countryFilter !== "All Countries";
 
   return (
-    <main className="min-h-screen bg-[#f5f7fb]">
+    <main className="min-h-screen min-h-[100dvh] overflow-x-hidden bg-[#f5f7fb]">
       <section className="border-b border-slate-200 bg-white">
-        <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+        <div className="mx-auto w-full max-w-7xl px-3 py-5 sm:px-6 sm:py-6 lg:px-8 lg:py-7">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <div className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.18em] text-indigo-600">
@@ -520,13 +578,13 @@ export default function StaffTravelRecordsPage() {
                 Staff Travel
               </div>
 
-              <div className="flex items-center gap-3">
+              <div className="flex min-w-0 items-center gap-3">
                 <div className="hidden h-12 w-12 items-center justify-center rounded-2xl bg-indigo-600 text-white shadow-lg shadow-indigo-600/20 sm:flex">
                   <Plane size={23} />
                 </div>
 
                 <div>
-                  <h1 className="text-2xl font-bold tracking-tight text-slate-950 sm:text-3xl">
+                  <h1 className="text-xl font-bold tracking-tight text-slate-950 sm:text-2xl lg:text-3xl">
                     Staff Travel Records
                   </h1>
                   <p className="mt-1.5 text-sm text-slate-500">
@@ -547,7 +605,7 @@ export default function StaffTravelRecordsPage() {
         </div>
       </section>
 
-      <div className="mx-auto max-w-7xl space-y-6 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+      <div className="mx-auto w-full max-w-7xl space-y-5 px-3 py-5 sm:space-y-6 sm:px-6 sm:py-6 lg:px-8 lg:py-8">
         {error && (
           <div className="flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3.5 text-sm text-red-700">
             <AlertTriangle size={18} className="mt-0.5 shrink-0" />
@@ -565,7 +623,7 @@ export default function StaffTravelRecordsPage() {
           </div>
         )}
 
-        <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <section className="grid grid-cols-2 gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-4">
           <StatCard
             label="Total Employees"
             value={loading ? "—" : stats.employees}
@@ -593,7 +651,7 @@ export default function StaffTravelRecordsPage() {
         </section>
 
         <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-          <div className="flex flex-col gap-3 md:flex-row">
+          <div className="flex flex-col gap-2.5 md:flex-row md:items-center">
             <div className="relative min-w-0 flex-1">
               <Search
                 size={18}
@@ -610,7 +668,7 @@ export default function StaffTravelRecordsPage() {
             <select
               value={countryFilter}
               onChange={(event) => setCountryFilter(event.target.value)}
-              className="h-[46px] rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm outline-none focus:border-indigo-400 focus:bg-white"
+              className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm outline-none focus:border-indigo-400 focus:bg-white md:w-auto md:min-w-[190px]"
             >
               {countries.map((country) => (
                 <option key={country} value={country}>
@@ -623,7 +681,7 @@ export default function StaffTravelRecordsPage() {
               <button
                 type="button"
                 onClick={clearFilters}
-                className="h-[46px] rounded-xl border border-slate-200 px-4 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+                className="h-11 w-full rounded-xl border border-slate-200 px-4 text-sm font-semibold text-slate-600 hover:bg-slate-50 md:w-auto"
               >
                 Clear
               </button>
@@ -633,7 +691,7 @@ export default function StaffTravelRecordsPage() {
               type="button"
               onClick={() => void loadRecords(true)}
               disabled={refreshing}
-              className="inline-flex h-[46px] items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+              className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50 md:w-auto"
             >
               <RefreshCw
                 size={16}
@@ -707,9 +765,9 @@ export default function StaffTravelRecordsPage() {
                       onClick={() =>
                         setOpenEmployee(isOpen ? null : employeeKey)
                       }
-                      className="w-full px-4 py-4 text-left transition hover:bg-slate-50 sm:px-6 sm:py-5"
+                      className="w-full px-3.5 py-4 text-left transition hover:bg-slate-50 sm:px-6 sm:py-5"
                     >
-                      <div className="flex items-center gap-3">
+                      <div className="flex min-w-0 items-center gap-3">
                         <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-sm font-bold text-indigo-700">
                           {getInitials(employee.name)}
                         </div>
@@ -915,7 +973,7 @@ export default function StaffTravelRecordsPage() {
                                       </td>
 
                                       <td className="px-4 py-4">
-                                        <div className="flex items-center justify-end gap-2">
+                                        <div className="flex flex-wrap items-center justify-end gap-2">
                                           {hasGoingTicket && (
                                             <button
                                               type="button"
@@ -950,9 +1008,21 @@ export default function StaffTravelRecordsPage() {
                                           <button
                                             type="button"
                                             onClick={() => openEditModal(record)}
-                                            className="inline-flex items-center rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700"
+                                            disabled={deletingRecordId === record.id}
+                                            className="inline-flex items-center rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
                                           >
                                             Edit
+                                          </button>
+
+                                          <button
+                                            type="button"
+                                            onClick={() => void deleteTravelRecord(record)}
+                                            disabled={deletingRecordId === record.id}
+                                            title="Delete travel record"
+                                            className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                          >
+                                            <Trash2 size={14} />
+                                            {deletingRecordId === record.id ? "Deleting..." : "Delete"}
                                           </button>
                                         </div>
                                       </td>
@@ -973,7 +1043,7 @@ export default function StaffTravelRecordsPage() {
 
                               return (
                                 <div key={record.id} className="p-4">
-                                  <div className="flex items-start justify-between gap-3">
+                                  <div className="flex min-w-0 items-start justify-between gap-3">
                                     <div>
                                       <p className="text-xs font-bold uppercase tracking-wider text-slate-400">
                                         Trip {employee.records.length - index}
@@ -1091,14 +1161,14 @@ export default function StaffTravelRecordsPage() {
                                     </div>
                                   </div>
 
-                                  <div className="mt-3 flex gap-2">
+                                  <div className="mt-3 grid grid-cols-2 gap-2 sm:flex">
                                     {hasGoingTicket && (
                                       <button
                                         type="button"
                                         onClick={() =>
                                           void openTicket(record.ticket_file)
                                         }
-                                        className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold text-slate-700"
+                                        className="inline-flex min-w-0 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold text-slate-700"
                                       >
                                         <FileText size={14} />
                                         Going
@@ -1113,7 +1183,7 @@ export default function StaffTravelRecordsPage() {
                                             record.return_ticket_file
                                           )
                                         }
-                                        className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold text-slate-700"
+                                        className="inline-flex min-w-0 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold text-slate-700"
                                       >
                                         <FileText size={14} />
                                         Return
@@ -1123,9 +1193,20 @@ export default function StaffTravelRecordsPage() {
                                     <button
                                       type="button"
                                       onClick={() => openEditModal(record)}
-                                      className="inline-flex flex-1 items-center justify-center rounded-xl bg-indigo-600 px-3 py-2.5 text-xs font-semibold text-white"
+                                      disabled={deletingRecordId === record.id}
+                                      className="inline-flex min-w-0 items-center justify-center rounded-xl bg-indigo-600 px-3 py-2.5 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
                                     >
                                       Edit Trip
+                                    </button>
+
+                                    <button
+                                      type="button"
+                                      onClick={() => void deleteTravelRecord(record)}
+                                      disabled={deletingRecordId === record.id}
+                                      className="inline-flex min-w-0 items-center justify-center gap-1.5 rounded-xl border border-red-200 bg-white px-3 py-2.5 text-xs font-semibold text-red-600 disabled:cursor-not-allowed disabled:opacity-50"
+                                    >
+                                      <Trash2 size={14} />
+                                      {deletingRecordId === record.id ? "Deleting..." : "Delete"}
                                     </button>
                                   </div>
                                 </div>
@@ -1150,7 +1231,7 @@ export default function StaffTravelRecordsPage() {
             if (event.target === event.currentTarget) closeEditModal();
           }}
         >
-          <div className="flex max-h-[95vh] w-full max-w-3xl flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl sm:rounded-3xl">
+          <div className="flex max-h-[95dvh] min-h-0 w-full max-w-3xl flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl sm:max-h-[90dvh] sm:rounded-3xl">
             <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 sm:px-6">
               <div>
                 <p className="text-xs font-bold uppercase tracking-wider text-indigo-600">
@@ -1170,7 +1251,7 @@ export default function StaffTravelRecordsPage() {
               </button>
             </div>
 
-            <div className="overflow-y-auto p-5 sm:p-6">
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 sm:p-6">
               {editError && (
                 <div className="mb-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
                   <p className="font-semibold">Please check this</p>
@@ -1332,7 +1413,7 @@ export default function StaffTravelRecordsPage() {
               </div>
             </div>
 
-            <div className="flex flex-col-reverse gap-3 border-t border-slate-200 bg-slate-50 px-5 py-4 sm:flex-row sm:justify-end sm:px-6">
+            <div className="flex flex-col-reverse gap-2.5 border-t border-slate-200 bg-slate-50 px-4 py-3.5 sm:flex-row sm:justify-end sm:px-6">
               <button
                 type="button"
                 onClick={closeEditModal}
@@ -1461,7 +1542,7 @@ function StatCard({
   };
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
       <div className="flex items-start justify-between gap-4">
         <div>
           <p className="text-xs font-medium text-slate-500">{label}</p>
