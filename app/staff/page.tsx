@@ -314,10 +314,23 @@ export default function StaffTravelRecordsPage() {
     return true;
   }
 
+  function isR2Key(value: string | null) {
+    if (!value) return false;
+
+    return (
+      value.startsWith("travel/") ||
+      value.startsWith("candidates/") ||
+      value.startsWith("staff/")
+    );
+  }
+
   function isSupabaseStoragePath(value: string | null) {
     if (!value) return false;
 
-    return value.includes("/storage/v1/object/");
+    return (
+      value.includes("/storage/v1/object/") ||
+      !isR2Key(value)
+    );
   }
 
   async function uploadEditPdf(
@@ -414,13 +427,9 @@ export default function StaffTravelRecordsPage() {
     }
 
     try {
-      const response = await fetch("/api/r2-signed-url", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ key: path }),
-      });
+      const response = await fetch(
+        `/api/r2-signed-url?key=${encodeURIComponent(path)}`
+      );
 
       const result = await response.json();
 
@@ -563,6 +572,8 @@ export default function StaffTravelRecordsPage() {
 
       closeEditModal();
     } catch (err: unknown) {
+      await removeEditFiles(newPaths);
+
       setEditError(
         err instanceof Error ? err.message : "Unable to update travel record."
       );

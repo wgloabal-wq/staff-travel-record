@@ -2,7 +2,11 @@ import { DeleteObjectsCommand } from "@aws-sdk/client-s3";
 import { r2, R2_BUCKET_NAME } from "@/lib/r2";
 
 function isAllowedKey(key: string) {
-  return key.startsWith("travel/") || key.startsWith("candidates/");
+  return (
+    key.startsWith("travel/") ||
+    key.startsWith("candidates/") ||
+    key.startsWith("staff/")
+  );
 }
 
 export async function POST(request: Request) {
@@ -51,14 +55,18 @@ export async function POST(request: Request) {
       success: true,
       deleted: keys.length,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("R2 delete error:", error);
+
+    const err = error as {
+      message?: string;
+    };
 
     return Response.json(
       {
         success: false,
         message: "Unable to delete documents.",
-        error: error?.message || "Unknown error",
+        error: err?.message || "Unknown error",
       },
       { status: 500 }
     );

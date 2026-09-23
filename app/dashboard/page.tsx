@@ -46,18 +46,6 @@ type StaffForm = {
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
-function getFileExtension(file: File) {
-  const extension = file.name.split(".").pop()?.toLowerCase();
-
-  if (!extension) return "pdf";
-
-  if (["pdf", "jpg", "jpeg", "png"].includes(extension)) {
-    return extension;
-  }
-
-  return "pdf";
-}
-
 function validateDocument(file: File) {
   const allowedTypes = [
     "application/pdf",
@@ -309,22 +297,26 @@ export default function DashboardPage() {
       return;
     }
 
-    const extension = getFileExtension(file);
-
-    const path = `staff/${person.id}/${type}-${crypto.randomUUID()}.${extension}`;
-
     try {
-      const { error: uploadError } = await supabase.storage
-        .from("staff-documents")
-        .upload(path, file, {
-          cacheControl: "3600",
-          upsert: false,
-          contentType: file.type,
-        });
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("folder", `staff/${person.id}`);
 
-      if (uploadError) {
-        throw uploadError;
+      const uploadResponse = await fetch("/api/r2-upload", {
+        method: "POST",
+        body: formData,
+      });
+
+      const uploadResult = await uploadResponse.json();
+
+      if (!uploadResponse.ok || !uploadResult.success) {
+        throw new Error(
+          uploadResult.message ||
+            "Unable to upload document to Cloudflare R2."
+        );
       }
+
+      const r2Path = uploadResult.key as string;
 
       const oldDocument =
         type === "passport"
@@ -333,8 +325,8 @@ export default function DashboardPage() {
 
       const updatePayload =
         type === "passport"
-          ? { passport_document: path }
-          : { visa_document: path };
+          ? { passport_document: r2Path }
+          : { visa_document: r2Path };
 
       const { error: updateError } = await supabase
         .from("staff")
@@ -342,17 +334,29 @@ export default function DashboardPage() {
         .eq("id", person.id);
 
       if (updateError) {
-        await supabase.storage
-          .from("staff-documents")
-          .remove([path]);
+        await fetch("/api/r2-delete", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            keys: [r2Path],
+          }),
+        });
 
         throw updateError;
       }
 
       if (oldDocument) {
-        await supabase.storage
-          .from("staff-documents")
-          .remove([oldDocument]);
+        await fetch("/api/r2-delete", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            keys: [oldDocument],
+          }),
+        });
       }
 
       setStaff((current) =>
@@ -361,8 +365,8 @@ export default function DashboardPage() {
             ? {
                 ...item,
                 ...(type === "passport"
-                  ? { passport_document: path }
-                  : { visa_document: path }),
+                  ? { passport_document: r2Path }
+                  : { visa_document: r2Path }),
               }
             : item
         )
@@ -404,18 +408,21 @@ export default function DashboardPage() {
     try {
       setError("");
 
-      const { data, error: signedUrlError } =
-        await supabase.storage
-          .from("staff-documents")
-          .createSignedUrl(path, 60 * 10);
+      const response = await fetch(
+        `/api/r2-signed-url?key=${encodeURIComponent(path)}`
+      );
 
-      if (signedUrlError) {
-        throw signedUrlError;
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(
+          result.message || "Unable to create document URL."
+        );
       }
 
-      if (data?.signedUrl) {
+      if (result.signedUrl) {
         window.open(
-          data.signedUrl,
+          result.signedUrl,
           "_blank",
           "noopener,noreferrer"
         );
@@ -448,9 +455,24 @@ export default function DashboardPage() {
       ].filter(Boolean) as string[];
 
       if (filesToRemove.length) {
-        await supabase.storage
-          .from("staff-documents")
-          .remove(filesToRemove);
+        const response = await fetch("/api/r2-delete", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            keys: filesToRemove,
+          }),
+        });
+
+        const result = await response.json();
+
+        if (!response.ok || !result.success) {
+          throw new Error(
+            result.message ||
+              "Unable to delete staff documents from Cloudflare R2."
+          );
+        }
       }
 
       const { error: deleteError } = await supabase

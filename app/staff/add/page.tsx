@@ -273,6 +273,7 @@ export default function AddStaffTravelPage() {
 
       if (updateError) {
         await removeUploadedFiles(uploadedPaths);
+        uploadedPaths.length = 0;
 
         await supabase
           .from("travel_records")
@@ -299,6 +300,10 @@ export default function AddStaffTravelPage() {
           : "Something went wrong while adding the travel record.";
 
       setError(message);
+
+      // If anything fails after an R2 upload, remove those files too.
+      await removeUploadedFiles(uploadedPaths);
+      uploadedPaths.length = 0;
 
       if (recordId) {
         await supabase
