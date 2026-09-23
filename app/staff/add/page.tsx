@@ -27,6 +27,7 @@ type FormState = {
   going_date: string;
   coming_date: string;
   visa_valid_till: string;
+  visa_number: string;
 };
 
 function validatePdf(file: File) {
@@ -50,10 +51,12 @@ export default function AddStaffTravelPage() {
     going_date: "",
     coming_date: "",
     visa_valid_till: "",
+    visa_number: "",
   });
 
   const [goingFile, setGoingFile] = useState<File | null>(null);
   const [returnFile, setReturnFile] = useState<File | null>(null);
+  const [visaFile, setVisaFile] = useState<File | null>(null);
   const [sameTicket, setSameTicket] = useState(false);
 
   const [saving, setSaving] = useState(false);
@@ -120,10 +123,28 @@ export default function AddStaffTravelPage() {
     setReturnFile(file);
   }
 
+  function handleVisaFile(event: ChangeEvent<HTMLInputElement>) {
+    setError("");
+    setSuccess("");
+
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const validationError = validatePdf(file);
+
+    if (validationError) {
+      setError(validationError);
+      event.target.value = "";
+      return;
+    }
+
+    setVisaFile(file);
+  }
+
   async function uploadPdf(
     file: File,
     recordId: string,
-    type: "going" | "return"
+    type: "going" | "return" | "visa"
   ) {
     const formData = new FormData();
 
@@ -139,7 +160,7 @@ export default function AddStaffTravelPage() {
 
     if (!response.ok || !result.success || !result.key) {
       throw new Error(
-        result.message || `Unable to upload ${type} ticket.`
+        result.message || `Unable to upload ${type} document.`
       );
     }
 
@@ -232,6 +253,8 @@ export default function AddStaffTravelPage() {
           going_date: form.going_date || null,
           coming_date: form.coming_date || null,
           visa_valid_till: form.visa_valid_till || null,
+          visa_number: form.visa_number.trim() || null,
+          visa_file: null,
           ticket_file: null,
           return_ticket_file: null,
         })
@@ -263,11 +286,21 @@ export default function AddStaffTravelPage() {
         uploadedPaths.push(uploaded.path);
       }
 
+      let visaFileKey: string | null = null;
+
+      if (visaFile) {
+        const uploaded = await uploadPdf(visaFile, recordId, "visa");
+        visaFileKey = uploaded.path;
+        uploadedPaths.push(uploaded.path);
+      }
+
       const { error: updateError } = await supabase
         .from("travel_records")
         .update({
           ticket_file: goingTicketKey,
           return_ticket_file: returnTicketKey,
+          visa_number: form.visa_number.trim() || null,
+          visa_file: visaFileKey,
         })
         .eq("id", recordId);
 
@@ -504,6 +537,46 @@ export default function AddStaffTravelPage() {
           <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
             <div className="border-b border-slate-100 px-5 py-5 sm:px-6">
               <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
+                  <FileText className="h-5 w-5" />
+                </div>
+                <div>
+                  <h2 className="font-bold text-slate-900">Visa Details</h2>
+                  <p className="text-sm text-slate-500">
+                    Add the visa number and upload the visa PDF.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid gap-5 p-5 sm:grid-cols-2 sm:p-6">
+              <div>
+                <label htmlFor="visa_number" className="mb-2 block text-sm font-semibold text-slate-700">
+                  Visa Number
+                </label>
+                <input
+                  id="visa_number"
+                  name="visa_number"
+                  value={form.visa_number}
+                  onChange={handleChange}
+                  placeholder="Enter visa number"
+                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10"
+                />
+              </div>
+
+              <TicketUploadCard
+                title="Visa Document"
+                description="Upload the visa PDF for this employee."
+                selectedFile={visaFile}
+                onFileChange={handleVisaFile}
+                onRemove={() => setVisaFile(null)}
+              />
+            </div>
+          </section>
+
+          <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+            <div className="border-b border-slate-100 px-5 py-5 sm:px-6">
+              <div className="flex items-center gap-3">
                 <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-50 text-amber-600">
                   <Ticket className="h-5 w-5" />
                 </div>
@@ -660,14 +733,27 @@ function TicketUploadCard({
             </p>
           </div>
 
-          <button
-            type="button"
-            onClick={onRemove}
-            className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-50"
-          >
+          <div className="flex shrink-0 gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                const url = URL.createObjectURL(selectedFile);
+                window.open(url, "_blank", "noopener,noreferrer");
+                setTimeout(() => URL.revokeObjectURL(url), 60_000);
+              }}
+              className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-indigo-200 bg-white px-3 py-2 text-xs font-semibold text-indigo-600 hover:bg-indigo-50"
+            >
+              View
+            </button>
+            <button
+              type="button"
+              onClick={onRemove}
+              className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-50"
+            >
             <X className="h-3.5 w-3.5" />
             Remove
           </button>
+          </div>
         </div>
       )}
 

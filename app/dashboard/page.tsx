@@ -10,7 +10,6 @@ import {
   AlertTriangle,
   CheckCircle2,
   Eye,
-  FileText,
   Loader2,
   Pencil,
   Plus,
@@ -30,9 +29,7 @@ type Staff = {
   staff_id: string;
   full_name: string;
   passport_number: string | null;
-  visa_number: string | null;
   passport_document: string | null;
-  visa_document: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -41,7 +38,6 @@ type StaffForm = {
   staff_id: string;
   full_name: string;
   passport_number: string;
-  visa_number: string;
 };
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
@@ -100,7 +96,6 @@ export default function DashboardPage() {
     staff_id: "",
     full_name: "",
     passport_number: "",
-    visa_number: "",
   });
 
   const [saving, setSaving] = useState(false);
@@ -170,8 +165,7 @@ export default function DashboardPage() {
       staff_id: "",
       full_name: "",
       passport_number: "",
-      visa_number: "",
-    });
+      });
 
     setError("");
     setFormOpen(true);
@@ -184,7 +178,6 @@ export default function DashboardPage() {
       staff_id: person.staff_id,
       full_name: person.full_name,
       passport_number: person.passport_number || "",
-      visa_number: person.visa_number || "",
     });
 
     setError("");
@@ -224,8 +217,6 @@ export default function DashboardPage() {
             full_name: form.full_name.trim(),
             passport_number:
               form.passport_number.trim() || null,
-            visa_number:
-              form.visa_number.trim() || null,
           })
           .eq("id", editingStaff.id)
           .select()
@@ -252,8 +243,6 @@ export default function DashboardPage() {
             full_name: form.full_name.trim(),
             passport_number:
               form.passport_number.trim() || null,
-            visa_number:
-              form.visa_number.trim() || null,
           })
           .select()
           .single();
@@ -284,7 +273,7 @@ export default function DashboardPage() {
 
   async function uploadDocument(
     person: Staff,
-    type: "passport" | "visa",
+    type: "passport",
     file: File
   ) {
     setError("");
@@ -318,15 +307,8 @@ export default function DashboardPage() {
 
       const r2Path = uploadResult.key as string;
 
-      const oldDocument =
-        type === "passport"
-          ? person.passport_document
-          : person.visa_document;
-
-      const updatePayload =
-        type === "passport"
-          ? { passport_document: r2Path }
-          : { visa_document: r2Path };
+      const oldDocument = person.passport_document;
+      const updatePayload = { passport_document: r2Path };
 
       const { error: updateError } = await supabase
         .from("staff")
@@ -364,19 +346,13 @@ export default function DashboardPage() {
           item.id === person.id
             ? {
                 ...item,
-                ...(type === "passport"
-                  ? { passport_document: r2Path }
-                  : { visa_document: r2Path }),
+                passport_document: r2Path,
               }
             : item
         )
       );
 
-      setSuccess(
-        type === "passport"
-          ? "Passport document uploaded successfully."
-          : "Visa document uploaded successfully."
-      );
+      setSuccess("Passport document uploaded successfully.");
     } catch (err: unknown) {
       console.error(err);
 
@@ -391,7 +367,7 @@ export default function DashboardPage() {
   async function handleDocumentChange(
     event: ChangeEvent<HTMLInputElement>,
     person: Staff,
-    type: "passport" | "visa"
+    type: "passport"
   ) {
     const file = event.target.files?.[0];
 
@@ -449,10 +425,9 @@ export default function DashboardPage() {
       setError("");
       setSuccess("");
 
-      const filesToRemove = [
-        person.passport_document,
-        person.visa_document,
-      ].filter(Boolean) as string[];
+      const filesToRemove = [person.passport_document].filter(
+        Boolean
+      ) as string[];
 
       if (filesToRemove.length) {
         const response = await fetch("/api/r2-delete", {
@@ -510,9 +485,6 @@ export default function DashboardPage() {
       person.staff_id.toLowerCase().includes(query) ||
       (person.passport_number || "")
         .toLowerCase()
-        .includes(query) ||
-      (person.visa_number || "")
-        .toLowerCase()
         .includes(query)
     );
   });
@@ -521,9 +493,6 @@ export default function DashboardPage() {
     (person) => person.passport_document
   ).length;
 
-  const visaCount = staff.filter(
-    (person) => person.visa_document
-  ).length;
 
   return (
     <main className="min-h-screen min-h-[100dvh] overflow-x-hidden bg-[#f5f7fb]">
@@ -548,7 +517,7 @@ export default function DashboardPage() {
                   </h1>
 
                   <p className="mt-1.5 max-w-2xl text-sm leading-6 text-slate-500">
-                    Manage staff identity, passport and visa documents.
+                    Manage staff identity and passport documents.
                   </p>
                 </div>
               </div>
@@ -629,12 +598,6 @@ export default function DashboardPage() {
             tone="emerald"
           />
 
-          <StatCard
-            label="Visa Documents"
-            value={loading ? "—" : `${visaCount}/${staff.length}`}
-            icon={<FileText size={20} />}
-            tone="amber"
-          />
         </section>
 
         {/* Search */}
@@ -651,7 +614,7 @@ export default function DashboardPage() {
                 onChange={(event) =>
                   setSearch(event.target.value)
                 }
-                placeholder="Search staff name, ID, passport or visa..."
+                placeholder="Search staff name, ID or passport..."
                 className="w-full rounded-xl border border-slate-200 bg-slate-50 py-3 pl-10 pr-4 text-sm outline-none transition placeholder:text-slate-400 focus:border-indigo-400 focus:bg-white focus:ring-4 focus:ring-indigo-50"
               />
             </div>
@@ -717,10 +680,6 @@ export default function DashboardPage() {
 
                       <th className="px-4 py-3">
                         Passport
-                      </th>
-
-                      <th className="px-4 py-3">
-                        Visa
                       </th>
 
                       <th className="px-4 py-3">
@@ -843,18 +802,6 @@ export default function DashboardPage() {
                     }))
                   }
                 />
-
-                <FormInput
-                  label="Visa Number"
-                  value={form.visa_number}
-                  placeholder="Visa number"
-                  onChange={(value) =>
-                    setForm((current) => ({
-                      ...current,
-                      visa_number: value,
-                    }))
-                  }
-                />
               </div>
             </div>
 
@@ -915,7 +862,7 @@ function StaffRow({
   onUpload: (
     event: ChangeEvent<HTMLInputElement>,
     person: Staff,
-    type: "passport" | "visa"
+    type: "passport"
   ) => Promise<void>;
   onEdit: (person: Staff) => void;
   onDelete: (person: Staff) => Promise<void>;
@@ -959,27 +906,10 @@ function StaffRow({
       </td>
 
       <td className="px-4 py-4">
-        <DocumentCell
-          number={person.visa_number}
-          document={person.visa_document}
-          label="Visa"
-          type="visa"
-          person={person}
-          onView={onView}
-          onUpload={onUpload}
-        />
-      </td>
-
-      <td className="px-4 py-4">
         <div className="flex items-center gap-2">
           <DocumentStatus
             uploaded={Boolean(person.passport_document)}
             label="Passport"
-          />
-
-          <DocumentStatus
-            uploaded={Boolean(person.visa_document)}
-            label="Visa"
           />
         </div>
       </td>
@@ -1025,7 +955,7 @@ function MobileStaffCard({
   onUpload: (
     event: ChangeEvent<HTMLInputElement>,
     person: Staff,
-    type: "passport" | "visa"
+    type: "passport"
   ) => Promise<void>;
   onEdit: (person: Staff) => void;
   onDelete: (person: Staff) => Promise<void>;
@@ -1058,16 +988,6 @@ function MobileStaffCard({
           number={person.passport_number}
           document={person.passport_document}
           type="passport"
-          person={person}
-          onView={onView}
-          onUpload={onUpload}
-        />
-
-        <MobileDocument
-          title="Visa"
-          number={person.visa_number}
-          document={person.visa_document}
-          type="visa"
           person={person}
           onView={onView}
           onUpload={onUpload}
@@ -1112,13 +1032,13 @@ function DocumentCell({
   number: string | null;
   document: string | null;
   label: string;
-  type: "passport" | "visa";
+  type: "passport";
   person: Staff;
   onView: (path: string | null) => Promise<void>;
   onUpload: (
     event: ChangeEvent<HTMLInputElement>,
     person: Staff,
-    type: "passport" | "visa"
+    type: "passport"
   ) => Promise<void>;
 }) {
   return (
@@ -1189,13 +1109,13 @@ function MobileDocument({
   title: string;
   number: string | null;
   document: string | null;
-  type: "passport" | "visa";
+  type: "passport";
   person: Staff;
   onView: (path: string | null) => Promise<void>;
   onUpload: (
     event: ChangeEvent<HTMLInputElement>,
     person: Staff,
-    type: "passport" | "visa"
+    type: "passport"
   ) => Promise<void>;
 }) {
   return (
@@ -1420,7 +1340,7 @@ function EmptyState({
 
       <p className="mt-1 max-w-sm text-sm text-slate-500">
         {search
-          ? "Try a different name, Staff ID, passport or visa number."
+          ? "Try a different name, Staff ID or passport number."
           : "Add your first staff member to start managing documents."}
       </p>
 

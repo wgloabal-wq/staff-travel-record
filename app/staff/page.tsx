@@ -28,6 +28,8 @@ type TravelRecord = {
   going_date: string | null;
   coming_date: string | null;
   visa_valid_till: string | null;
+  visa_number: string | null;
+  visa_file: string | null;
   ticket_file: string | null;
   return_ticket_file: string | null;
   created_at: string | null;
@@ -155,7 +157,7 @@ export default function StaffTravelRecordsPage() {
       const { data, error: fetchError } = await supabase
         .from("travel_records")
         .select(
-          "id, staff_name, country, going_date, coming_date, visa_valid_till, ticket_file, return_ticket_file, created_at"
+          "id, staff_name, country, going_date, coming_date, visa_valid_till, visa_number, visa_file, ticket_file, return_ticket_file, created_at"
         )
         .order("going_date", { ascending: false });
 
@@ -595,7 +597,7 @@ export default function StaffTravelRecordsPage() {
     try {
       const storagePaths = Array.from(
         new Set(
-          [record.ticket_file, record.return_ticket_file]
+          [record.ticket_file, record.return_ticket_file, record.visa_file]
             .map(getStoragePath)
             .filter(Boolean) as string[]
         )
@@ -1058,17 +1060,32 @@ export default function StaffTravelRecordsPage() {
                                       </td>
 
                                       <td className="px-4 py-4">
-                                        <span
-                                          className={`text-sm font-semibold ${
-                                            isVisaExpiringSoon(
-                                              record.visa_valid_till
-                                            )
-                                              ? "text-amber-600"
-                                              : "text-slate-700"
-                                          }`}
-                                        >
-                                          {formatDate(record.visa_valid_till)}
-                                        </span>
+                                        <div className="min-w-[150px]">
+                                          <p
+                                            className={`text-sm font-semibold ${
+                                              isVisaExpiringSoon(
+                                                record.visa_valid_till
+                                              )
+                                                ? "text-amber-600"
+                                                : "text-slate-700"
+                                            }`}
+                                          >
+                                            {record.visa_number || "No visa number"}
+                                          </p>
+                                          <p className="mt-0.5 text-[11px] text-slate-400">
+                                            Valid till {formatDate(record.visa_valid_till)}
+                                          </p>
+                                          {record.visa_file && (
+                                            <button
+                                              type="button"
+                                              onClick={() => void openTicket(record.visa_file)}
+                                              className="mt-1.5 inline-flex items-center gap-1.5 text-[11px] font-bold text-indigo-600 hover:underline"
+                                            >
+                                              <FileText size={12} />
+                                              View Visa
+                                            </button>
+                                          )}
+                                        </div>
                                       </td>
 
                                       <td className="px-4 py-4">
@@ -1245,17 +1262,30 @@ export default function StaffTravelRecordsPage() {
                                       <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">
                                         Visa
                                       </p>
+                                      <p className="mt-1 text-sm font-bold text-slate-700">
+                                        {record.visa_number || "No visa number"}
+                                      </p>
                                       <p
-                                        className={`mt-1 text-sm font-bold ${
+                                        className={`mt-0.5 text-[11px] font-semibold ${
                                           isVisaExpiringSoon(
                                             record.visa_valid_till
                                           )
                                             ? "text-amber-600"
-                                            : "text-slate-700"
+                                            : "text-slate-500"
                                         }`}
                                       >
-                                        {formatDate(record.visa_valid_till)}
+                                        Valid till {formatDate(record.visa_valid_till)}
                                       </p>
+                                      {record.visa_file && (
+                                        <button
+                                          type="button"
+                                          onClick={() => void openTicket(record.visa_file)}
+                                          className="mt-2 inline-flex items-center gap-1.5 text-xs font-bold text-indigo-600"
+                                        >
+                                          <FileText size={12} />
+                                          View Visa
+                                        </button>
+                                      )}
                                     </div>
 
                                     <div className="rounded-xl bg-slate-50 p-3">
