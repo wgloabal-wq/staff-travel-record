@@ -120,42 +120,56 @@ export default function AddStaffTravelPage() {
     setReturnFile(file);
   }
 
-  async function uploadPdf(file: File, recordId: string, type: "going" | "return") {
-    const filePath = `travel/${recordId}-${type}-${Date.now()}.pdf`;
+  async function uploadPdf(
+    file: File,
+    recordId: string,
+    type: "going" | "return"
+  ) {
+    const formData = new FormData();
 
-    const { error: uploadError } = await supabase.storage
-      .from("travel-documents")
-      .upload(filePath, file, {
-        cacheControl: "3600",
-        upsert: false,
-        contentType: "application/pdf",
-      });
+    formData.append("file", file);
+    formData.append("folder", `travel/${recordId}/${type}`);
 
-    if (uploadError) {
-      throw new Error(uploadError.message || `Unable to upload ${type} ticket.`);
+    const response = await fetch("/api/r2-upload", {
+      method: "POST",
+      body: formData,
+    });
+
+    const result = await response.json();
+
+    if (!response.ok || !result.success || !result.key) {
+      throw new Error(
+        result.message || `Unable to upload ${type} ticket.`
+      );
     }
 
-    const {
-      data: { publicUrl },
-    } = supabase.storage
-      .from("travel-documents")
-      .getPublicUrl(filePath);
-
     return {
-      path: filePath,
-      publicUrl,
+      path: result.key as string,
     };
   }
 
   async function removeUploadedFiles(paths: string[]) {
     if (!paths.length) return;
 
-    const { error: removeError } = await supabase.storage
-      .from("travel-documents")
-      .remove(paths);
+    try {
+      const response = await fetch("/api/r2-delete", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ keys: paths }),
+      });
 
-    if (removeError) {
-      console.warn("Unable to clean uploaded files:", removeError.message);
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        console.warn(
+          "Unable to clean uploaded R2 files:",
+          result.message || "Unknown error"
+        );
+      }
+    } catch (removeError) {
+      console.warn("Unable to clean uploaded R2 files:", removeError);
     }
   }
 
@@ -232,28 +246,28 @@ export default function AddStaffTravelPage() {
 
       recordId = createdRecord.id;
 
-      let goingTicketUrl: string | null = null;
-      let returnTicketUrl: string | null = null;
+      let goingTicketKey: string | null = null;
+      let returnTicketKey: string | null = null;
 
       if (goingFile) {
         const uploaded = await uploadPdf(goingFile, recordId, "going");
-        goingTicketUrl = uploaded.publicUrl;
+        goingTicketKey = uploaded.path;
         uploadedPaths.push(uploaded.path);
       }
 
       if (sameTicket) {
-        returnTicketUrl = goingTicketUrl;
+        returnTicketKey = goingTicketKey;
       } else if (returnFile) {
         const uploaded = await uploadPdf(returnFile, recordId, "return");
-        returnTicketUrl = uploaded.publicUrl;
+        returnTicketKey = uploaded.path;
         uploadedPaths.push(uploaded.path);
       }
 
       const { error: updateError } = await supabase
         .from("travel_records")
         .update({
-          ticket_file: goingTicketUrl,
-          return_ticket_file: returnTicketUrl,
+          ticket_file: goingTicketKey,
+          return_ticket_file: returnTicketKey,
         })
         .eq("id", recordId);
 

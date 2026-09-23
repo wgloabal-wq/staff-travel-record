@@ -338,6 +338,45 @@ export default function CandidatesPage() {
     setEditDocumentFile(file);
   }
 
+  function isR2CandidateKey(value: string) {
+    return value.startsWith("candidates/");
+  }
+
+  async function uploadCandidateDocument(file: File, candidateId: number) {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("folder", `candidates/${candidateId}`);
+
+    const response = await fetch("/api/r2-upload", {
+      method: "POST",
+      body: formData,
+    });
+
+    const result = await response.json();
+
+    if (!response.ok || !result.success || !result.key) {
+      throw new Error(result.message || "Unable to upload candidate document.");
+    }
+
+    return result.key as string;
+  }
+
+  async function deleteR2CandidateFiles(keys: string[]) {
+    if (!keys.length) return;
+
+    const response = await fetch("/api/r2-delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ keys }),
+    });
+
+    const result = await response.json();
+
+    if (!response.ok || !result.success) {
+      throw new Error(result.message || "Unable to delete candidate documents.");
+    }
+  }
+
   async function saveEdit() {
     if (!editCandidate) return;
 
@@ -386,24 +425,10 @@ export default function CandidatesPage() {
 
     try {
       if (editDocumentFile) {
-        const safeName = editDocumentFile.name.replace(
-          /[^a-zA-Z0-9._-]/g,
-          "_"
+        uploadedNewPath = await uploadCandidateDocument(
+          editDocumentFile,
+          editCandidate.id
         );
-
-        uploadedNewPath = `${editCandidate.id}/documents-${crypto.randomUUID()}-${safeName}`;
-
-        const { error: uploadError } = await supabase.storage
-          .from("candidate-documents")
-          .upload(uploadedNewPath, editDocumentFile, {
-            cacheControl: "3600",
-            upsert: false,
-            contentType: "application/pdf",
-          });
-
-        if (uploadError) {
-          throw new Error(`Document upload failed: ${uploadError.message}`);
-        }
       }
 
       const { data, error } = await supabase
@@ -463,19 +488,21 @@ export default function CandidatesPage() {
       .single();
 
       if (error || !data) {
-        if (uploadedNewPath) {
-          await supabase.storage
-            .from("candidate-documents")
-            .remove([uploadedNewPath]);
+        if (uploadedNewPath && isR2CandidateKey(uploadedNewPath)) {
+          await deleteR2CandidateFiles([uploadedNewPath]).catch(() => undefined);
         }
 
         throw new Error(error?.message || "Unable to update candidate.");
       }
 
       if (uploadedNewPath && existingDocument) {
-        await supabase.storage
-          .from("candidate-documents")
-          .remove([existingDocument]);
+        if (isR2CandidateKey(existingDocument)) {
+          await deleteR2CandidateFiles([existingDocument]).catch(() => undefined);
+        } else if (existingDocument) {
+          await supabase.storage
+            .from("candidate-documents")
+            .remove([existingDocument]);
+        }
       }
 
       setCandidates((current) =>
@@ -489,10 +516,8 @@ export default function CandidatesPage() {
       setEditSaving(false);
       closeEdit();
     } catch (saveError) {
-      if (uploadedNewPath) {
-        await supabase.storage
-          .from("candidate-documents")
-          .remove([uploadedNewPath]);
+      if (uploadedNewPath && isR2CandidateKey(uploadedNewPath)) {
+        await deleteR2CandidateFiles([uploadedNewPath]).catch(() => undefined);
       }
 
       setEditError(
@@ -511,6 +536,21 @@ export default function CandidatesPage() {
     }
 
     const storagePath = getStoragePath(filePath);
+
+    if (isR2CandidateKey(storagePath)) {
+      const response = await fetch(
+        `/api/r2-signed-url?key=${encodeURIComponent(storagePath)}`
+      );
+      const result = await response.json();
+
+      if (!response.ok || !result.success || !result.signedUrl) {
+        window.alert(result.message || "Unable to open document.");
+        return;
+      }
+
+      window.open(result.signedUrl, "_blank", "noopener,noreferrer");
+      return;
+    }
 
     const { data, error } = await supabase.storage
       .from("candidate-documents")
@@ -549,8 +589,27 @@ export default function CandidatesPage() {
       .filter((file): file is string => typeof file === "string" && Boolean(file))
       .map(getStoragePath);
 
-    if (files.length) {
-      await supabase.storage.from("candidate-documents").remove(files);
+    const r2Files = files.filter(isR2CandidateKey);
+    const legacySupabaseFiles = files.filter((file) => !isR2CandidateKey(file));
+
+    if (r2Files.length) {
+      try {
+        await deleteR2CandidateFiles(r2Files);
+      } catch (storageError) {
+        window.alert(
+          storageError instanceof Error
+            ? storageError.message
+            : "Unable to delete candidate documents."
+        );
+        setDeletingId(null);
+        return;
+      }
+    }
+
+    if (legacySupabaseFiles.length) {
+      await supabase.storage
+        .from("candidate-documents")
+        .remove(legacySupabaseFiles);
     }
 
     const { error } = await supabase

@@ -314,57 +314,125 @@ export default function StaffTravelRecordsPage() {
     return true;
   }
 
+  function isSupabaseStoragePath(value: string | null) {
+    if (!value) return false;
+
+    return value.includes("/storage/v1/object/");
+  }
+
   async function uploadEditPdf(
     file: File,
     recordId: string,
     type: "going" | "return"
   ) {
-    const path = `travel/${recordId}/${type}-${crypto.randomUUID()}.pdf`;
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("folder", `travel/${recordId}`);
 
-    const { error: uploadError } = await supabase.storage
-      .from("travel-documents")
-      .upload(path, file, {
-        cacheControl: "3600",
-        upsert: false,
-        contentType: "application/pdf",
-      });
+    const response = await fetch("/api/r2-upload", {
+      method: "POST",
+      body: formData,
+    });
 
-    if (uploadError) throw new Error(uploadError.message);
+    const result = await response.json();
 
-    return { path };
+    if (!response.ok || !result.success) {
+      throw new Error(result.message || `Unable to upload ${type} ticket.`);
+    }
+
+    return { path: result.key as string };
   }
 
   async function removeEditFiles(values: Array<string | null>) {
-    const paths = Array.from(
-      new Set(values.map(getStoragePath).filter(Boolean) as string[])
+    const uniqueValues = Array.from(
+      new Set(values.filter(Boolean) as string[])
     );
 
-    if (!paths.length) return;
+    if (!uniqueValues.length) return;
 
-    const { error } = await supabase.storage
-      .from("travel-documents")
-      .remove(paths);
+    const supabasePaths = uniqueValues
+      .filter(isSupabaseStoragePath)
+      .map(getStoragePath)
+      .filter(Boolean) as string[];
 
-    if (error) console.warn("Old ticket cleanup failed:", error.message);
+    const r2Keys = uniqueValues.filter(
+      (value) => !isSupabaseStoragePath(value)
+    );
+
+    if (supabasePaths.length) {
+      const { error } = await supabase.storage
+        .from("travel-documents")
+        .remove(supabasePaths);
+
+      if (error) {
+        console.warn("Old Supabase ticket cleanup failed:", error.message);
+      }
+    }
+
+    if (r2Keys.length) {
+      const response = await fetch("/api/r2-delete", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ keys: r2Keys }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        console.warn(
+          "R2 ticket cleanup failed:",
+          result.message || "Unable to delete R2 files."
+        );
+      }
+    }
   }
 
   async function openTicket(path: string | null) {
     if (!path) return;
 
-    const storagePath = getStoragePath(path);
-    if (!storagePath) return;
+    if (isSupabaseStoragePath(path)) {
+      const storagePath = getStoragePath(path);
 
-    const { data, error: signedUrlError } = await supabase.storage
-      .from("travel-documents")
-      .createSignedUrl(storagePath, 60 * 10);
+      if (!storagePath) return;
 
-    if (signedUrlError) {
-      setError(signedUrlError.message);
+      const { data, error: signedUrlError } = await supabase.storage
+        .from("travel-documents")
+        .createSignedUrl(storagePath, 60 * 10);
+
+      if (signedUrlError) {
+        setError(signedUrlError.message);
+        return;
+      }
+
+      if (data?.signedUrl) {
+        window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+      }
+
       return;
     }
 
-    if (data?.signedUrl) {
-      window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+    try {
+      const response = await fetch("/api/r2-signed-url", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ key: path }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || !result.success || !result.signedUrl) {
+        throw new Error(result.message || "Unable to open ticket PDF.");
+      }
+
+      window.open(result.signedUrl, "_blank", "noopener,noreferrer");
+    } catch (err: unknown) {
+      setError(
+        err instanceof Error ? err.message : "Unable to open ticket PDF."
+      );
     }
   }
 
@@ -532,15 +600,45 @@ export default function StaffTravelRecordsPage() {
       }
 
       if (storagePaths.length) {
-        const { error: storageError } = await supabase.storage
-          .from("travel-documents")
-          .remove(storagePaths);
+        const supabasePaths = storagePaths
+          .filter(isSupabaseStoragePath)
+          .map(getStoragePath)
+          .filter(Boolean) as string[];
 
-        if (storageError) {
-          console.warn(
-            "Travel record deleted, but ticket cleanup failed:",
-            storageError.message
-          );
+        const r2Keys = storagePaths.filter(
+          (value) => !isSupabaseStoragePath(value)
+        );
+
+        if (supabasePaths.length) {
+          const { error: storageError } = await supabase.storage
+            .from("travel-documents")
+            .remove(supabasePaths);
+
+          if (storageError) {
+            console.warn(
+              "Travel record deleted, but old Supabase ticket cleanup failed:",
+              storageError.message
+            );
+          }
+        }
+
+        if (r2Keys.length) {
+          const response = await fetch("/api/r2-delete", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ keys: r2Keys }),
+          });
+
+          const result = await response.json();
+
+          if (!response.ok || !result.success) {
+            console.warn(
+              "Travel record deleted, but R2 ticket cleanup failed:",
+              result.message || "Unable to delete R2 files."
+            );
+          }
         }
       }
 

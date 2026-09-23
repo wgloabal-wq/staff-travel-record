@@ -280,21 +280,24 @@ export default function AddCandidatePage() {
           "_"
         );
 
-        uploadedPath = `${candidateId}/documents-${crypto.randomUUID()}-${safeName}`;
+        const formData = new FormData();
+        formData.append("file", documentsFile);
+        formData.append("folder", `candidates/${candidateId}`);
 
-        const { error: uploadError } = await supabase.storage
-          .from("candidate-documents")
-          .upload(uploadedPath, documentsFile, {
-            cacheControl: "3600",
-            upsert: false,
-            contentType: "application/pdf",
-          });
+        const uploadResponse = await fetch("/api/r2-upload", {
+          method: "POST",
+          body: formData,
+        });
 
-        if (uploadError) {
+        const uploadResult = await uploadResponse.json();
+
+        if (!uploadResponse.ok || !uploadResult.success || !uploadResult.key) {
           throw new Error(
-            `Documents upload failed: ${uploadError.message}`
+            uploadResult.message || "Documents upload failed."
           );
         }
+
+        uploadedPath = uploadResult.key as string;
       }
 
       const { error: insertError } = await supabase
@@ -352,10 +355,12 @@ export default function AddCandidatePage() {
         });
 
       if (insertError) {
-        if (uploadedPath) {
-          await supabase.storage
-            .from("candidate-documents")
-            .remove([uploadedPath]);
+        if (uploadedPath?.startsWith("candidates/")) {
+          await fetch("/api/r2-delete", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ keys: [uploadedPath] }),
+          }).catch(() => undefined);
         }
 
         throw new Error(insertError.message);
