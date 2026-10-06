@@ -50,6 +50,7 @@ type EditForm = {
   going_date: string;
   coming_date: string;
   visa_valid_till: string;
+  visa_file: string | null;
   ticket_file: string | null;
   return_ticket_file: string | null;
 };
@@ -142,6 +143,7 @@ export default function StaffTravelRecordsPage() {
   const [editRecord, setEditRecord] = useState<EditForm | null>(null);
   const [editGoingFile, setEditGoingFile] = useState<File | null>(null);
   const [editReturnFile, setEditReturnFile] = useState<File | null>(null);
+  const [editVisaFile, setEditVisaFile] = useState<File | null>(null);
   const [editSameTicket, setEditSameTicket] = useState(false);
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState("");
@@ -273,6 +275,7 @@ export default function StaffTravelRecordsPage() {
     setEditError("");
     setEditGoingFile(null);
     setEditReturnFile(null);
+    setEditVisaFile(null);
 
     const same =
       Boolean(record.ticket_file && record.return_ticket_file) &&
@@ -288,6 +291,7 @@ export default function StaffTravelRecordsPage() {
       going_date: record.going_date || "",
       coming_date: record.coming_date || "",
       visa_valid_till: record.visa_valid_till || "",
+      visa_file: record.visa_file,
       ticket_file: record.ticket_file,
       return_ticket_file: record.return_ticket_file,
     });
@@ -298,6 +302,7 @@ export default function StaffTravelRecordsPage() {
     setEditRecord(null);
     setEditGoingFile(null);
     setEditReturnFile(null);
+    setEditVisaFile(null);
     setEditError("");
     setEditSameTicket(false);
   }
@@ -338,11 +343,11 @@ export default function StaffTravelRecordsPage() {
   async function uploadEditPdf(
     file: File,
     recordId: string,
-    type: "going" | "return"
+    type: "going" | "return" | "visa"
   ) {
     const formData = new FormData();
     formData.append("file", file);
-    formData.append("folder", `travel/${recordId}`);
+    formData.append("folder", `travel/${recordId}/${type}`);
 
     const response = await fetch("/api/r2-upload", {
       method: "POST",
@@ -352,7 +357,7 @@ export default function StaffTravelRecordsPage() {
     const result = await response.json();
 
     if (!response.ok || !result.success) {
-      throw new Error(result.message || `Unable to upload ${type} ticket.`);
+      throw new Error(result.message || `Unable to upload ${type} document.`);
     }
 
     return { path: result.key as string };
@@ -493,6 +498,7 @@ export default function StaffTravelRecordsPage() {
     try {
       let goingUrl = editRecord.ticket_file;
       let returnUrl = editRecord.return_ticket_file;
+      let visaUrl = editRecord.visa_file;
 
       if (editGoingFile) {
         const uploaded = await uploadEditPdf(
@@ -516,6 +522,16 @@ export default function StaffTravelRecordsPage() {
         newPaths.push(uploaded.path);
       }
 
+      if (editVisaFile) {
+        const uploaded = await uploadEditPdf(
+          editVisaFile,
+          editRecord.id,
+          "visa"
+        );
+        visaUrl = uploaded.path;
+        newPaths.push(uploaded.path);
+      }
+
       const { error: updateError } = await supabase
         .from("travel_records")
         .update({
@@ -524,6 +540,7 @@ export default function StaffTravelRecordsPage() {
           going_date: editRecord.going_date || null,
           coming_date: editRecord.coming_date || null,
           visa_valid_till: editRecord.visa_valid_till || null,
+          visa_file: visaUrl,
           ticket_file: goingUrl,
           return_ticket_file: returnUrl,
         })
@@ -553,6 +570,14 @@ export default function StaffTravelRecordsPage() {
         oldFiles.push(editRecord.return_ticket_file);
       }
 
+      if (
+        editVisaFile &&
+        editRecord.visa_file &&
+        getStoragePath(editRecord.visa_file) !== getStoragePath(visaUrl)
+      ) {
+        oldFiles.push(editRecord.visa_file);
+      }
+
       await removeEditFiles(oldFiles);
 
       setRecords((current) =>
@@ -565,6 +590,7 @@ export default function StaffTravelRecordsPage() {
                 going_date: editRecord.going_date || null,
                 coming_date: editRecord.coming_date || null,
                 visa_valid_till: editRecord.visa_valid_till || null,
+                visa_file: visaUrl,
                 ticket_file: goingUrl,
                 return_ticket_file: returnUrl,
               }
@@ -1061,28 +1087,39 @@ export default function StaffTravelRecordsPage() {
 
                                       <td className="px-4 py-4">
                                         <div className="min-w-[150px]">
-                                          <p
-                                            className={`text-sm font-semibold ${
-                                              isVisaExpiringSoon(
-                                                record.visa_valid_till
-                                              )
-                                                ? "text-amber-600"
-                                                : "text-slate-700"
-                                            }`}
-                                          >
-                                            {record.visa_number || "No visa number"}
-                                          </p>
-                                          <p className="mt-0.5 text-[11px] text-slate-400">
-                                            Valid till {formatDate(record.visa_valid_till)}
-                                          </p>
-                                          {record.visa_file && (
+                                          {record.visa_file ? (
                                             <button
                                               type="button"
                                               onClick={() => void openTicket(record.visa_file)}
-                                              className="mt-1.5 inline-flex items-center gap-1.5 text-[11px] font-bold text-indigo-600 hover:underline"
+                                              className={`text-sm font-semibold hover:underline ${
+                                                isVisaExpiringSoon(record.visa_valid_till)
+                                                  ? "text-amber-600 hover:text-amber-800"
+                                                  : "text-indigo-600 hover:text-indigo-800"
+                                              }`}
+                                              title="Open visa PDF"
                                             >
-                                              <FileText size={12} />
-                                              View Visa
+                                              Valid till {formatDate(record.visa_valid_till)}
+                                            </button>
+                                          ) : (
+                                            <p
+                                              className={`text-sm font-semibold ${
+                                                isVisaExpiringSoon(record.visa_valid_till)
+                                                  ? "text-amber-600"
+                                                  : "text-slate-700"
+                                              }`}
+                                            >
+                                              Valid till {formatDate(record.visa_valid_till)}
+                                            </p>
+                                          )}
+
+                                          {!record.visa_file && (
+                                            <button
+                                              type="button"
+                                              onClick={() => openEditModal(record)}
+                                              className="mt-1 inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-600 hover:underline"
+                                            >
+                                              <Upload size={11} />
+                                              Upload PDF
                                             </button>
                                           )}
                                         </div>
@@ -1262,28 +1299,38 @@ export default function StaffTravelRecordsPage() {
                                       <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">
                                         Visa
                                       </p>
-                                      <p className="mt-1 text-sm font-bold text-slate-700">
-                                        {record.visa_number || "No visa number"}
-                                      </p>
-                                      <p
-                                        className={`mt-0.5 text-[11px] font-semibold ${
-                                          isVisaExpiringSoon(
-                                            record.visa_valid_till
-                                          )
-                                            ? "text-amber-600"
-                                            : "text-slate-500"
-                                        }`}
-                                      >
-                                        Valid till {formatDate(record.visa_valid_till)}
-                                      </p>
-                                      {record.visa_file && (
+                                      {record.visa_file ? (
                                         <button
                                           type="button"
                                           onClick={() => void openTicket(record.visa_file)}
+                                          className={`mt-1 text-left text-sm font-bold hover:underline ${
+                                            isVisaExpiringSoon(record.visa_valid_till)
+                                              ? "text-amber-600"
+                                              : "text-indigo-600"
+                                          }`}
+                                        >
+                                          Valid till {formatDate(record.visa_valid_till)}
+                                        </button>
+                                      ) : (
+                                        <p
+                                          className={`mt-1 text-sm font-bold ${
+                                            isVisaExpiringSoon(record.visa_valid_till)
+                                              ? "text-amber-600"
+                                              : "text-slate-700"
+                                          }`}
+                                        >
+                                          Valid till {formatDate(record.visa_valid_till)}
+                                        </p>
+                                      )}
+
+                                      {!record.visa_file && (
+                                        <button
+                                          type="button"
+                                          onClick={() => openEditModal(record)}
                                           className="mt-2 inline-flex items-center gap-1.5 text-xs font-bold text-indigo-600"
                                         >
-                                          <FileText size={12} />
-                                          View Visa
+                                          <Upload size={12} />
+                                          Upload PDF
                                         </button>
                                       )}
                                     </div>
@@ -1525,6 +1572,22 @@ export default function StaffTravelRecordsPage() {
                       const file = e.target.files?.[0];
                       if (!file) return;
                       if (validateEditPdf(file)) setEditReturnFile(file);
+                      e.target.value = "";
+                    }}
+                  />
+                </div>
+
+                <div className="mt-4">
+                  <ModalTicket
+                    title="Visa Document"
+                    existing={editRecord.visa_file}
+                    selected={editVisaFile}
+                    onOpen={() => void openTicket(editRecord.visa_file)}
+                    onRemove={() => setEditVisaFile(null)}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      if (validateEditPdf(file)) setEditVisaFile(file);
                       e.target.value = "";
                     }}
                   />
